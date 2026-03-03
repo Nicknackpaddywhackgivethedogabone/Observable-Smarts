@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SkyWatch — OSINT Live Globe</title>
+    <meta name="description" content="Real-time 3D OSINT globe with satellite positions, flight paths, ship tracking, and satellite imagery.">
+    <meta name="theme-color" content="#0a0e17">
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
+    <!-- CesiumJS -->
+    <link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.119/Build/Cesium/Widgets/widgets.css">
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.119/Build/Cesium/Cesium.js"></script>
+
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+    <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(30 12 12)"/>
+            <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-30 12 12)"/>
+            <circle cx="12" cy="12" r="2" fill="currentColor"/>
+        </svg>
+        SKYWATCH
+    </div>
+    <div class="status-bar">
+        <div class="status-item">
+            <span class="status-dot loading" id="sat-status"></span>
+            <span id="sat-count">Satellites: --</span>
+        </div>
+        <div class="status-item">
+            <span class="status-dot offline" id="flight-status"></span>
+            <span id="flight-count">Flights: --</span>
+        </div>
+        <div class="status-item">
+            <span class="status-dot offline" id="ship-status"></span>
+            <span id="ship-count">Ships: --</span>
+        </div>
+    </div>
+</div>
+
+<!-- Sidebar -->
+<div id="sidebar">
+    <!-- Satellites Layer -->
+    <div class="panel-section">
+        <h3>Satellites</h3>
+        <div class="layer-group">
+            <div class="layer-toggle">
+                <span class="label"><span class="dot" style="background: var(--accent-cyan)"></span> Satellites</span>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-satellites" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="sub-filters" id="sat-filters">
+                <label><input type="radio" name="sat-filter" value="all" checked> All</label>
+                <label><input type="radio" name="sat-filter" value="EarthObservation"> Earth Observation</label>
+                <label><input type="radio" name="sat-filter" value="ISS"> ISS</label>
+                <label><input type="radio" name="sat-filter" value="Starlink"> Starlink</label>
+                <label><input type="radio" name="sat-filter" value="GPS"> GPS</label>
+                <label><input type="radio" name="sat-filter" value="Weather"> Weather</label>
+                <label><input type="radio" name="sat-filter" value="Debris"> Debris</label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Imaging Swaths -->
+    <div class="panel-section">
+        <h3>Imaging Swaths</h3>
+        <div class="layer-toggle">
+            <span class="label"><span class="dot" style="background: var(--accent-green)"></span> Swath Footprints</span>
+            <label class="switch">
+                <input type="checkbox" id="toggle-swaths" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Imagery Footprints -->
+    <div class="panel-section">
+        <h3>Recent Imagery</h3>
+        <div class="layer-toggle">
+            <span class="label"><span class="dot" style="background: var(--accent-purple)"></span> Imagery Footprints</span>
+            <label class="switch">
+                <input type="checkbox" id="toggle-imagery">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Flights Layer -->
+    <div class="panel-section">
+        <h3>Flights (ADS-B)</h3>
+        <div class="layer-group">
+            <div class="layer-toggle">
+                <span class="label"><span class="dot" style="background: var(--accent-orange)"></span> Flights</span>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-flights">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="sub-filters" id="flight-filters">
+                <label><input type="radio" name="flight-filter" value="all" checked> All</label>
+                <label><input type="radio" name="flight-filter" value="Commercial"> Commercial</label>
+                <label><input type="radio" name="flight-filter" value="Cargo"> Cargo</label>
+                <label><input type="radio" name="flight-filter" value="Military"> Military</label>
+                <label><input type="radio" name="flight-filter" value="GeneralAviation"> General Aviation</label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ships Layer -->
+    <div class="panel-section">
+        <h3>Ships (AIS)</h3>
+        <div class="layer-group">
+            <div class="layer-toggle">
+                <span class="label"><span class="dot" style="background: var(--accent-blue)"></span> Ships</span>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-ships">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="sub-filters" id="ship-filters">
+                <label><input type="radio" name="ship-filter" value="all" checked> All</label>
+                <label><input type="radio" name="ship-filter" value="Cargo"> Cargo</label>
+                <label><input type="radio" name="ship-filter" value="Tanker"> Tanker</label>
+                <label><input type="radio" name="ship-filter" value="Passenger"> Passenger</label>
+                <label><input type="radio" name="ship-filter" value="Fishing"> Fishing</label>
+                <label><input type="radio" name="ship-filter" value="MilitaryGovernment"> Military/Gov</label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tools -->
+    <div class="panel-section">
+        <h3>Tools</h3>
+        <button class="btn" id="btn-roi" style="width: 100%">Region of Interest</button>
+    </div>
+</div>
+
+<button id="sidebar-toggle">&#9776;</button>
+
+<!-- Info Popup -->
+<div id="info-popup">
+    <div class="popup-header">
+        <h4 id="popup-title">--</h4>
+        <button class="popup-close" id="popup-close">&times;</button>
+    </div>
+    <div class="popup-body" id="popup-body"></div>
+</div>
+
+<!-- ROI Panel -->
+<div id="roi-panel">
+    <h4>Region of Interest — Pass Predictor</h4>
+    <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+        Click points on the globe to draw a polygon, then click "Predict Passes".
+    </p>
+    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+        <button class="btn btn-primary" id="btn-roi-predict">Predict Passes</button>
+        <button class="btn" id="btn-roi-clear">Clear</button>
+        <button class="btn" id="btn-roi-close">Close</button>
+    </div>
+    <div id="roi-results"></div>
+</div>
+
+<!-- Base Layer Picker -->
+<div id="base-layer-picker">
+    <select id="base-layer-select">
+        <option value="osm">OpenStreetMap</option>
+        <option value="dark" selected>Dark Earth</option>
+        <option value="bing">Bing Maps (needs token)</option>
+    </select>
+</div>
+
+<!-- Time Controls -->
+<div id="time-controls">
+    <span class="live-badge active" id="live-badge">LIVE</span>
+    <input type="range" id="time-scrubber" min="0" max="1440" value="1440" step="1">
+    <span id="time-display">--</span>
+</div>
+
+<div id="cesiumContainer"></div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>

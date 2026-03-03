@@ -1,0 +1,22 @@
+{
+  "name": "SkyWatch — OSINT Live Globe",
+  "short_name": "SkyWatch",
+  "description": "Real-time 3D OSINT globe with satellite positions, flight paths, ship tracking, and satellite imagery.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e17",
+  "theme_color": "#0a0e17",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
