@@ -11,19 +11,22 @@ public class ShipService
     private readonly ILogger<ShipService> _logger;
     private readonly IConfiguration _configuration;
     private readonly ApiStatusService _apiStatus;
+    private readonly DataCaptureService _capture;
 
     private const string ShipsCacheKey = "ships_data";
     private const string TrailsCacheKey = "ships_trails";
     private const string SourceName = "AISHub";
 
     public ShipService(IHttpClientFactory httpClientFactory, IMemoryCache cache,
-        ILogger<ShipService> logger, IConfiguration configuration, ApiStatusService apiStatus)
+        ILogger<ShipService> logger, IConfiguration configuration, ApiStatusService apiStatus,
+        DataCaptureService capture)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
         _configuration = configuration;
         _apiStatus = apiStatus;
+        _capture = capture;
     }
 
     public async Task RefreshShipDataAsync(CancellationToken ct = default)
@@ -35,6 +38,7 @@ public class ShipService
             {
                 _logger.LogWarning("AISHub API key not configured. Ship data will not be available.");
                 _apiStatus.ReportFailure(SourceName, "API key not configured");
+                _capture.LogData("diagnostics", new { source = SourceName, issue = "no_api_key" });
                 return;
             }
 
@@ -109,11 +113,24 @@ public class ShipService
 
             _logger.LogInformation("Ship data refreshed: {Count} vessels", ships.Count);
             _apiStatus.ReportSuccess(SourceName, ships.Count);
+            _capture.LogData("diagnostics", new
+            {
+                source = SourceName,
+                vesselCount = ships.Count,
+                responseLength = response.Length,
+                success = true
+            });
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to refresh ship data from AISHub");
             _apiStatus.ReportFailure(SourceName, ex.Message);
+            _capture.LogData("diagnostics", new
+            {
+                source = SourceName,
+                error = ex.Message,
+                errorType = ex.GetType().Name
+            });
         }
     }
 

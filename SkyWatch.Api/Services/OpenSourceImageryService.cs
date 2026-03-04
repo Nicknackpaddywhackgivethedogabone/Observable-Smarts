@@ -11,17 +11,20 @@ public class OpenSourceImageryService
     private readonly ILogger<OpenSourceImageryService> _logger;
     private readonly IConfiguration _configuration;
     private readonly ApiStatusService _apiStatus;
+    private readonly DataCaptureService _capture;
 
     private const string ImageryCacheKey = "imagery_scenes";
 
     public OpenSourceImageryService(IHttpClientFactory httpClientFactory, IMemoryCache cache,
-        ILogger<OpenSourceImageryService> logger, IConfiguration configuration, ApiStatusService apiStatus)
+        ILogger<OpenSourceImageryService> logger, IConfiguration configuration, ApiStatusService apiStatus,
+        DataCaptureService capture)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
         _configuration = configuration;
         _apiStatus = apiStatus;
+        _capture = capture;
     }
 
     public async Task RefreshImageryAsync(CancellationToken ct = default)
@@ -38,8 +41,15 @@ public class OpenSourceImageryService
 
         var copernicusCount = scenes.Count(s => s.Source == "Copernicus");
         var usgsCount = scenes.Count(s => s.Source == "USGS");
-        if (copernicusCount > 0) _apiStatus.ReportSuccess("Copernicus", copernicusCount);
-        if (usgsCount > 0) _apiStatus.ReportSuccess("USGS", usgsCount);
+
+        // Always report status so the ticker shows something
+        if (copernicusCount > 0)
+            _apiStatus.ReportSuccess("Copernicus", copernicusCount);
+        else
+            _apiStatus.ReportFailure("Copernicus", "0 scenes returned");
+
+        if (usgsCount > 0)
+            _apiStatus.ReportSuccess("USGS", usgsCount);
     }
 
     public List<ImageryScene> GetRecentScenes()
@@ -47,20 +57,115 @@ public class OpenSourceImageryService
         return _cache.Get<List<ImageryScene>>(ImageryCacheKey) ?? new List<ImageryScene>();
     }
 
+    /// <summary>
+    /// Run a lightweight diagnostic check against imagery APIs and return structured results.
+    /// </summary>
+    public async Task<object> RunDiagnosticsAsync(CancellationToken ct)
+    {
+        var results = new Dictionary<string, object>();
+
+        // Cache status
+        var cached = _cache.Get<List<ImageryScene>>(ImageryCacheKey);
+        results["cache"] = new
+        {
+            scenesInCache = cached?.Count ?? 0,
+            copernicusScenes = cached?.Count(s => s.Source == "Copernicus") ?? 0,
+            usgsScenes = cached?.Count(s => s.Source == "USGS") ?? 0
+        };
+
+        // Test Copernicus
+        try
+        {
+            var client = _httpClientFactory.CreateClient("Copernicus");
+            var since = DateTime.UtcNow.AddHours(-24).ToString("yyyy-MM-ddTHH:mm:ss.000Z");
+            var url = $"https://catalogue.dataspace.copernicus.eu/odata/v1/Products?" +
+                      $"$filter=ContentDate/Start gt {since}&$orderby=ContentDate/Start desc&$top=1";
+
+            var response = await client.GetAsync(url, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            var statusCode = (int)response.StatusCode;
+            var preview = body.Length > 500 ? body[..500] + "..." : body;
+
+            int resultCount = 0;
+            try
+            {
+                var json = JsonDocument.Parse(body);
+                if (json.RootElement.TryGetProperty("value", out var val))
+                    resultCount = val.GetArrayLength();
+            }
+            catch { }
+
+            results["copernicus"] = new
+            {
+                reachable = response.IsSuccessStatusCode,
+                httpStatus = statusCode,
+                resultCount,
+                responsePreview = preview,
+                url
+            };
+        }
+        catch (Exception ex)
+        {
+            results["copernicus"] = new
+            {
+                reachable = false,
+                error = ex.Message,
+                errorType = ex.GetType().Name
+            };
+        }
+
+        // Test USGS credentials
+        var hasToken = !string.IsNullOrEmpty(_configuration["UsgsM2MApiToken"]);
+        var hasCredentials = !string.IsNullOrEmpty(_configuration["UsgsM2MUsername"]) &&
+                             !string.IsNullOrEmpty(_configuration["UsgsM2MPassword"]);
+
+        results["usgs"] = new
+        {
+            apiTokenConfigured = hasToken,
+            usernamePasswordConfigured = hasCredentials,
+            anyCredentials = hasToken || hasCredentials
+        };
+
+        return results;
+    }
+
     private async Task FetchCopernicusScenes(List<ImageryScene> scenes, CancellationToken ct)
     {
+        string url = "";
         try
         {
             var client = _httpClientFactory.CreateClient("Copernicus");
             var since = DateTime.UtcNow.AddHours(-24).ToString("yyyy-MM-ddTHH:mm:ss.000Z");
 
-            var url = $"https://catalogue.dataspace.copernicus.eu/odata/v1/Products?" +
+            url = $"https://catalogue.dataspace.copernicus.eu/odata/v1/Products?" +
                       $"$filter=ContentDate/Start gt {since}&" +
                       "$orderby=ContentDate/Start desc&" +
                       "$top=50&" +
                       "$select=Id,Name,ContentDate,GeoFootprint,S3Path";
 
-            var response = await client.GetStringAsync(url, ct);
+            var httpResponse = await client.GetAsync(url, ct);
+            var statusCode = (int)httpResponse.StatusCode;
+            var response = await httpResponse.Content.ReadAsStringAsync(ct);
+
+            // Always log raw response to diagnostics
+            _capture.LogData("diagnostics", new
+            {
+                source = "Copernicus",
+                url,
+                httpStatus = statusCode,
+                responseLength = response.Length,
+                responsePreview = response.Length > 2000 ? response[..2000] + "...[truncated]" : response,
+                success = httpResponse.IsSuccessStatusCode
+            });
+
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Copernicus returned HTTP {StatusCode}: {Body}",
+                    statusCode, response.Length > 200 ? response[..200] : response);
+                _apiStatus.ReportFailure("Copernicus", $"HTTP {statusCode}", statusCode);
+                return;
+            }
+
             var json = JsonDocument.Parse(response);
 
             if (json.RootElement.TryGetProperty("value", out var value))
@@ -89,9 +194,14 @@ public class OpenSourceImageryService
 
                         scenes.Add(scene);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Skip malformed entries
+                        _capture.LogData("diagnostics", new
+                        {
+                            source = "Copernicus",
+                            issue = "malformed_scene_entry",
+                            error = ex.Message
+                        });
                     }
                 }
             }
@@ -102,6 +212,14 @@ public class OpenSourceImageryService
         {
             _logger.LogWarning(ex, "Failed to fetch Copernicus imagery data");
             _apiStatus.ReportFailure("Copernicus", ex.Message);
+            _capture.LogData("diagnostics", new
+            {
+                source = "Copernicus",
+                url,
+                error = ex.Message,
+                errorType = ex.GetType().Name,
+                stackTrace = ex.StackTrace
+            });
         }
     }
 
@@ -119,6 +237,13 @@ public class OpenSourceImageryService
             if (!hasToken && !hasCredentials)
             {
                 _logger.LogDebug("USGS M2M credentials not configured, skipping USGS imagery");
+                _capture.LogData("diagnostics", new
+                {
+                    source = "USGS",
+                    issue = "no_credentials_configured",
+                    hasToken,
+                    hasCredentials
+                });
                 return;
             }
 
@@ -141,6 +266,11 @@ public class OpenSourceImageryService
                 {
                     SkyWatch.Api.Controllers.ConfigController.UsgsTokenExpired = true;
                     _logger.LogWarning("USGS API token is expired or invalid — falling back to username/password");
+                    _capture.LogData("diagnostics", new
+                    {
+                        source = "USGS",
+                        issue = "token_expired_or_invalid"
+                    });
                 }
             }
 
@@ -150,13 +280,29 @@ public class OpenSourceImageryService
                 var loginPayload = JsonSerializer.Serialize(new { username, password });
                 var loginResponse = await client.PostAsync($"{baseUrl}/login",
                     new StringContent(loginPayload, System.Text.Encoding.UTF8, "application/json"), ct);
-                var loginJson = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync(ct));
+                var loginBody = await loginResponse.Content.ReadAsStringAsync(ct);
+
+                _capture.LogData("diagnostics", new
+                {
+                    source = "USGS",
+                    step = "login",
+                    httpStatus = (int)loginResponse.StatusCode,
+                    responsePreview = loginBody.Length > 500 ? loginBody[..500] : loginBody
+                });
+
+                var loginJson = JsonDocument.Parse(loginBody);
                 authToken = loginJson.RootElement.GetProperty("data").GetString();
             }
 
             if (string.IsNullOrEmpty(authToken))
             {
                 _logger.LogWarning("USGS authentication failed (all methods)");
+                _apiStatus.ReportFailure("USGS", "Authentication failed");
+                _capture.LogData("diagnostics", new
+                {
+                    source = "USGS",
+                    issue = "auth_failed_all_methods"
+                });
                 return;
             }
 
@@ -179,7 +325,18 @@ public class OpenSourceImageryService
 
             var searchResponse = await client.PostAsync($"{baseUrl}/scene-search",
                 new StringContent(searchPayload, System.Text.Encoding.UTF8, "application/json"), ct);
-            var searchJson = JsonDocument.Parse(await searchResponse.Content.ReadAsStringAsync(ct));
+            var searchBody = await searchResponse.Content.ReadAsStringAsync(ct);
+
+            _capture.LogData("diagnostics", new
+            {
+                source = "USGS",
+                step = "scene-search",
+                httpStatus = (int)searchResponse.StatusCode,
+                responseLength = searchBody.Length,
+                responsePreview = searchBody.Length > 2000 ? searchBody[..2000] + "...[truncated]" : searchBody
+            });
+
+            var searchJson = JsonDocument.Parse(searchBody);
 
             if (searchJson.RootElement.TryGetProperty("data", out var data) &&
                 data.TryGetProperty("results", out var results))
@@ -235,6 +392,13 @@ public class OpenSourceImageryService
         {
             _logger.LogWarning(ex, "Failed to fetch USGS imagery data");
             _apiStatus.ReportFailure("USGS", ex.Message);
+            _capture.LogData("diagnostics", new
+            {
+                source = "USGS",
+                error = ex.Message,
+                errorType = ex.GetType().Name,
+                stackTrace = ex.StackTrace
+            });
         }
     }
 

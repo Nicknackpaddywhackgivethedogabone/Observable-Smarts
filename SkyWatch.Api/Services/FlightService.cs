@@ -11,6 +11,7 @@ public class FlightService
     private readonly ILogger<FlightService> _logger;
     private readonly IConfiguration _configuration;
     private readonly ApiStatusService _apiStatus;
+    private readonly DataCaptureService _capture;
 
     private const string FlightsCacheKey = "flights_data";
     private const string TrailsCacheKey = "flights_trails";
@@ -19,13 +20,15 @@ public class FlightService
     private const string OAuthTokenEndpoint = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
 
     public FlightService(IHttpClientFactory httpClientFactory, IMemoryCache cache,
-        ILogger<FlightService> logger, IConfiguration configuration, ApiStatusService apiStatus)
+        ILogger<FlightService> logger, IConfiguration configuration, ApiStatusService apiStatus,
+        DataCaptureService capture)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
         _configuration = configuration;
         _apiStatus = apiStatus;
+        _capture = capture;
     }
 
     public async Task RefreshFlightDataAsync(CancellationToken ct = default)
@@ -41,12 +44,14 @@ public class FlightService
             {
                 _cache.Remove(OAuthTokenCacheKey);
                 _logger.LogWarning("OpenSky returned 401 — retrying with fresh token / anonymous");
+                _capture.LogData("diagnostics", new { source = SourceName, issue = "401_retry" });
                 httpResponse = await FetchOpenSky(url, ct);
             }
 
             if (httpResponse == null)
             {
                 _apiStatus.ReportFailure(SourceName, "Request failed");
+                _capture.LogData("diagnostics", new { source = SourceName, issue = "request_returned_null" });
                 return;
             }
 
@@ -58,6 +63,14 @@ public class FlightService
                 _logger.LogWarning("OpenSky returned HTTP {StatusCode}: {Body}",
                     statusCode, errorBody.Length > 200 ? errorBody[..200] : errorBody);
                 _apiStatus.ReportFailure(SourceName, $"HTTP {statusCode}", statusCode);
+                _capture.LogData("diagnostics", new
+                {
+                    source = SourceName,
+                    url,
+                    httpStatus = statusCode,
+                    responsePreview = errorBody.Length > 1000 ? errorBody[..1000] : errorBody,
+                    success = false
+                });
                 return;
             }
 
@@ -134,11 +147,26 @@ public class FlightService
 
             _logger.LogInformation("Flight data refreshed: {Count} aircraft", flights.Count);
             _apiStatus.ReportSuccess(SourceName, flights.Count, statusCode);
+            _capture.LogData("diagnostics", new
+            {
+                source = SourceName,
+                url,
+                httpStatus = statusCode,
+                stateCount = flights.Count,
+                responseLength = response.Length,
+                success = true
+            });
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to refresh flight data from OpenSky");
             _apiStatus.ReportFailure(SourceName, ex.Message);
+            _capture.LogData("diagnostics", new
+            {
+                source = SourceName,
+                error = ex.Message,
+                errorType = ex.GetType().Name
+            });
         }
     }
 

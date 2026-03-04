@@ -23,4 +23,31 @@ public class ImageryController : ControllerBase
     {
         return Ok(_imageryService.GetRecentScenes());
     }
+
+    /// <summary>
+    /// Run live diagnostics against imagery APIs (Copernicus, USGS).
+    /// </summary>
+    [HttpGet("diagnostics")]
+    public async Task<IActionResult> Diagnostics(CancellationToken ct)
+    {
+        var result = await _imageryService.RunDiagnosticsAsync(ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Manually trigger an imagery refresh instead of waiting for the 30-minute cycle.
+    /// </summary>
+    [HttpPost("refresh")]
+    public async Task<IActionResult> Refresh(CancellationToken ct)
+    {
+        await _imageryService.RefreshImageryAsync(ct);
+        var scenes = _imageryService.GetRecentScenes();
+        return Ok(new
+        {
+            message = "Imagery refresh complete",
+            totalScenes = scenes.Count,
+            copernicus = scenes.Count(s => s.Source == "Copernicus"),
+            usgs = scenes.Count(s => s.Source == "USGS")
+        });
+    }
 }

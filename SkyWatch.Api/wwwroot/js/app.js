@@ -877,6 +877,28 @@
         });
     });
 
+    // ===== Imagery Manual Refresh =====
+    document.getElementById('btn-imagery-refresh').addEventListener('click', async function () {
+        const statusEl = document.getElementById('imagery-refresh-status');
+        this.disabled = true;
+        this.textContent = 'Refreshing...';
+        statusEl.textContent = '';
+
+        try {
+            const resp = await fetch('/api/imagery/refresh', { method: 'POST' });
+            const result = await resp.json();
+            statusEl.textContent = `${result.totalScenes} scenes (Copernicus: ${result.copernicus}, USGS: ${result.usgs})`;
+            if (state.imagery.enabled) {
+                await refreshImagery();
+            }
+        } catch (err) {
+            statusEl.textContent = 'Refresh failed: ' + err.message;
+        }
+
+        this.disabled = false;
+        this.textContent = 'Refresh Imagery Now';
+    });
+
     // ===== Sidebar Toggle (Mobile) =====
     document.getElementById('sidebar-toggle').addEventListener('click', function () {
         const sidebar = document.getElementById('sidebar');
