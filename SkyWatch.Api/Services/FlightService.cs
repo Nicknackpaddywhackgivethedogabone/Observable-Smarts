@@ -30,23 +30,23 @@ public class FlightService
     {
         try
         {
-            var client = _httpClientFactory.CreateClient("OpenSky");
-
-            var username = _configuration["OpenSkyUsername"];
-            var password = _configuration["OpenSkyPassword"];
-
             string url = "https://opensky-network.org/api/states/all";
 
-            if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
+            var httpResponse = await FetchOpenSky(url, authenticated: true, ct);
+
+            // If credentials are rejected, fall back to anonymous access
+            if (httpResponse != null && httpResponse.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                var credentials = Convert.ToBase64String(
-                    System.Text.Encoding.ASCII.GetBytes($"{username}:{password}"));
-                client.DefaultRequestHeaders.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+                _logger.LogWarning("OpenSky credentials rejected (401) — falling back to anonymous access");
+                httpResponse = await FetchOpenSky(url, authenticated: false, ct);
             }
 
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
-            var httpResponse = await client.SendAsync(request, ct);
+            if (httpResponse == null)
+            {
+                _apiStatus.ReportFailure(SourceName, "Request failed");
+                return;
+            }
+
             var statusCode = (int)httpResponse.StatusCode;
 
             if (!httpResponse.IsSuccessStatusCode)
@@ -128,6 +128,36 @@ public class FlightService
         {
             _logger.LogWarning(ex, "Failed to refresh flight data from OpenSky");
             _apiStatus.ReportFailure(SourceName, ex.Message);
+        }
+    }
+
+    private async Task<HttpResponseMessage?> FetchOpenSky(string url, bool authenticated, CancellationToken ct)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient("OpenSky");
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+
+            if (authenticated)
+            {
+                var username = _configuration["OpenSkyUsername"];
+                var password = _configuration["OpenSkyPassword"];
+
+                if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
+                {
+                    var credentials = Convert.ToBase64String(
+                        System.Text.Encoding.ASCII.GetBytes($"{username}:{password}"));
+                    request.Headers.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+                }
+            }
+
+            return await client.SendAsync(request, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "OpenSky HTTP request failed (authenticated={Auth})", authenticated);
+            return null;
         }
     }
 
