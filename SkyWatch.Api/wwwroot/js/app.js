@@ -67,8 +67,8 @@
 
     // ===== State =====
     const state = {
-        satellites: { enabled: true, filter: 'all', data: [] },
-        swaths: { enabled: true, data: [] },
+        satellites: { enabled: false, filter: 'all', data: [] },
+        swaths: { enabled: false, data: [] },
         imagery: { enabled: false, sourceFilter: 'all', sensorFilter: 'all', data: [] },
         flights: { enabled: false, filter: 'all', data: [] },
         ships: { enabled: false, filter: 'all', data: [] },
@@ -1389,7 +1389,7 @@
     });
 
     // ===== API Status Ticker =====
-    const API_STATUS_SOURCES = ['Celestrak', 'OpenSky', 'AISHub', 'Copernicus', 'USGS'];
+    const API_STATUS_SOURCES = ['Celestrak', 'OpenSky', 'AISHub', 'Copernicus', 'USGS', 'NASA CMR'];
 
     function formatAgo(isoString) {
         if (!isoString) return 'never';
