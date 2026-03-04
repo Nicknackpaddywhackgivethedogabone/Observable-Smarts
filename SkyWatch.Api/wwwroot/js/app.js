@@ -1045,6 +1045,74 @@
         });
     });
 
+    // ===== API Status Ticker =====
+    const API_STATUS_SOURCES = ['Celestrak', 'OpenSky', 'AISHub', 'Copernicus', 'USGS'];
+
+    function formatAgo(isoString) {
+        if (!isoString) return 'never';
+        const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+        if (diff < 0) return 'just now';
+        if (diff < 60) return diff + 's ago';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+        return Math.floor(diff / 86400) + 'd ago';
+    }
+
+    async function refreshApiStatus() {
+        try {
+            const data = await fetchJson('/api/status');
+            if (!data) return;
+
+            const container = document.getElementById('api-status-items');
+            if (!container) return;
+
+            container.innerHTML = '';
+            for (const name of API_STATUS_SOURCES) {
+                const s = data[name];
+                const item = document.createElement('div');
+                item.className = 'api-status-item';
+
+                let dotClass, detail;
+                if (!s || (!s.lastSuccess && !s.lastAttempt)) {
+                    dotClass = 'waiting';
+                    detail = 'waiting';
+                } else if (s.lastError) {
+                    dotClass = 'error';
+                    const errShort = s.lastHttpStatus ? ('HTTP ' + s.lastHttpStatus) : 'error';
+                    detail = errShort + ' · ' + formatAgo(s.lastAttempt);
+                } else {
+                    dotClass = 'ok';
+                    detail = s.lastItemCount.toLocaleString() + ' items · ' + formatAgo(s.lastSuccess);
+                }
+
+                item.innerHTML =
+                    '<span class="api-dot ' + dotClass + '"></span>' +
+                    '<span class="api-name">' + name + '</span>' +
+                    '<span class="api-detail">' + detail + '</span>';
+
+                if (s && s.lastError) {
+                    item.title = s.lastError;
+                }
+                container.appendChild(item);
+            }
+        } catch (e) {
+            console.warn('Failed to fetch API status:', e);
+        }
+    }
+
+    // Toggle ticker visibility
+    const ticker = document.getElementById('api-status-ticker');
+    const tickerToggle = document.getElementById('api-status-toggle');
+    if (tickerToggle) {
+        tickerToggle.addEventListener('click', function () {
+            ticker.classList.toggle('collapsed');
+        });
+    }
+
+    // Refresh status every 5 seconds
+    setInterval(refreshApiStatus, 5000);
+    refreshApiStatus();
+
     // ===== Auto-refresh Loops =====
     function startRefreshLoops() {
         // Initial loads

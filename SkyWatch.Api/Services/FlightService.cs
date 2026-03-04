@@ -10,17 +10,20 @@ public class FlightService
     private readonly IMemoryCache _cache;
     private readonly ILogger<FlightService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly ApiStatusService _apiStatus;
 
     private const string FlightsCacheKey = "flights_data";
     private const string TrailsCacheKey = "flights_trails";
+    private const string SourceName = "OpenSky";
 
     public FlightService(IHttpClientFactory httpClientFactory, IMemoryCache cache,
-        ILogger<FlightService> logger, IConfiguration configuration)
+        ILogger<FlightService> logger, IConfiguration configuration, ApiStatusService apiStatus)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
         _configuration = configuration;
+        _apiStatus = apiStatus;
     }
 
     public async Task RefreshFlightDataAsync(CancellationToken ct = default)
@@ -42,7 +45,20 @@ public class FlightService
                     new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
             }
 
-            var response = await client.GetStringAsync(url, ct);
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            var httpResponse = await client.SendAsync(request, ct);
+            var statusCode = (int)httpResponse.StatusCode;
+
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                var errorBody = await httpResponse.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("OpenSky returned HTTP {StatusCode}: {Body}",
+                    statusCode, errorBody.Length > 200 ? errorBody[..200] : errorBody);
+                _apiStatus.ReportFailure(SourceName, $"HTTP {statusCode}", statusCode);
+                return;
+            }
+
+            var response = await httpResponse.Content.ReadAsStringAsync(ct);
             var json = JsonDocument.Parse(response);
 
             var flights = new List<FlightPosition>();
@@ -106,10 +122,12 @@ public class FlightService
             _cache.Set(TrailsCacheKey, trails, TimeSpan.FromMinutes(10));
 
             _logger.LogInformation("Flight data refreshed: {Count} aircraft", flights.Count);
+            _apiStatus.ReportSuccess(SourceName, flights.Count, statusCode);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to refresh flight data from OpenSky");
+            _apiStatus.ReportFailure(SourceName, ex.Message);
         }
     }
 

@@ -41,6 +41,8 @@ public class SatellitePositionWorker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in satellite position worker");
+            var apiStatus = _services.GetRequiredService<ApiStatusService>();
+            apiStatus.ReportFailure("Celestrak", ex.Message);
         }
     }
 }
