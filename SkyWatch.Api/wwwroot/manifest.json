@@ -1,6 +1,6 @@
 {
-  "name": "SkyWatch — OSINT Live Globe",
-  "short_name": "SkyWatch",
+  "name": "Observable Smarts — OSINT Live Globe",
+  "short_name": "Observable Smarts",
   "description": "Real-time 3D OSINT globe with satellite positions, flight paths, ship tracking, and satellite imagery.",
   "start_url": "/",
   "display": "standalone",

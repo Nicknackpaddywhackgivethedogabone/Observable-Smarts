@@ -31,6 +31,9 @@ project.fragment.lock.json
 *.sln.iml
 .vscode/
 
+## Local secrets (never commit API keys)
+appsettings.Local.json
+
 ## OS
 .DS_Store
 Thumbs.db

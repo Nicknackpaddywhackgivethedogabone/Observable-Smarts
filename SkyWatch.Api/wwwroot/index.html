@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SkyWatch — OSINT Live Globe</title>
+    <title>Observable Smarts — OSINT Live Globe</title>
     <meta name="description" content="Real-time 3D OSINT globe with satellite positions, flight paths, ship tracking, and satellite imagery.">
     <meta name="theme-color" content="#0a0e17">
 
@@ -28,7 +28,7 @@
             <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-30 12 12)"/>
             <circle cx="12" cy="12" r="2" fill="currentColor"/>
         </svg>
-        SKYWATCH
+        OBSERVABLE SMARTS
     </div>
     <div class="status-bar">
         <div class="status-item">
@@ -138,10 +138,32 @@
         </div>
     </div>
 
+    <!-- No-Fly Zones -->
+    <div class="panel-section">
+        <h3>Airspace</h3>
+        <div class="layer-group">
+            <div class="layer-toggle">
+                <span class="label"><span class="dot" style="background: var(--accent-red)"></span> No-Fly Zones</span>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-noflyzone">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="sub-filters" id="nfz-filters">
+                <label><input type="radio" name="nfz-filter" value="all" checked> All</label>
+                <label><input type="radio" name="nfz-filter" value="Prohibited"> Prohibited (P)</label>
+                <label><input type="radio" name="nfz-filter" value="Restricted"> Restricted (R)</label>
+                <label><input type="radio" name="nfz-filter" value="MOA"> MOA</label>
+                <label><input type="radio" name="nfz-filter" value="TFR"> Active TFRs</label>
+            </div>
+        </div>
+    </div>
+
     <!-- Tools -->
     <div class="panel-section">
         <h3>Tools</h3>
         <button class="btn" id="btn-roi" style="width: 100%">Region of Interest</button>
+        <button class="btn" id="btn-settings" style="width: 100%; margin-top: 6px;">API Key Settings</button>
     </div>
 </div>
 
@@ -184,6 +206,51 @@
     <span class="live-badge active" id="live-badge">LIVE</span>
     <input type="range" id="time-scrubber" min="0" max="1440" value="1440" step="1">
     <span id="time-display">--</span>
+</div>
+
+<!-- Settings Modal -->
+<div id="settings-overlay">
+    <div id="settings-modal">
+        <div class="popup-header">
+            <h4>API Key Settings</h4>
+            <button class="popup-close" id="settings-close">&times;</button>
+        </div>
+        <div class="settings-body">
+            <p class="settings-desc">
+                Enter your API keys below. Keys are saved to <code>appsettings.Local.json</code> on the server
+                and never committed to source control. The app must be restarted after saving for changes to take effect.
+            </p>
+            <div class="settings-field">
+                <label>Cesium Ion Token <span class="key-status" id="status-CesiumIonToken"></span></label>
+                <input type="password" id="key-CesiumIonToken" placeholder="Paste token...">
+            </div>
+            <div class="settings-field">
+                <label>OpenSky Username <span class="key-status" id="status-OpenSkyUsername"></span></label>
+                <input type="text" id="key-OpenSkyUsername" placeholder="Username">
+            </div>
+            <div class="settings-field">
+                <label>OpenSky Password <span class="key-status" id="status-OpenSkyPassword"></span></label>
+                <input type="password" id="key-OpenSkyPassword" placeholder="Password">
+            </div>
+            <div class="settings-field">
+                <label>AISHub API Key <span class="key-status" id="status-AisHubApiKey"></span></label>
+                <input type="password" id="key-AisHubApiKey" placeholder="Paste key...">
+            </div>
+            <div class="settings-field">
+                <label>USGS M2M Username <span class="key-status" id="status-UsgsM2MUsername"></span></label>
+                <input type="text" id="key-UsgsM2MUsername" placeholder="Username">
+            </div>
+            <div class="settings-field">
+                <label>USGS M2M Password <span class="key-status" id="status-UsgsM2MPassword"></span></label>
+                <input type="password" id="key-UsgsM2MPassword" placeholder="Password">
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 12px;">
+                <button class="btn btn-primary" id="btn-save-keys">Save Keys</button>
+                <button class="btn" id="btn-cancel-keys">Cancel</button>
+            </div>
+            <div id="settings-message" style="margin-top: 8px; font-size: 12px;"></div>
+        </div>
+    </div>
 </div>
 
 <div id="cesiumContainer"></div>

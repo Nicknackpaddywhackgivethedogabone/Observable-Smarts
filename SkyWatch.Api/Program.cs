@@ -3,6 +3,9 @@ using SkyWatch.Api.Workers;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Load local secrets file (not committed to source control)
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
 // Add services
 builder.Services.AddControllers()
     .AddJsonOptions(o =>
@@ -14,7 +17,7 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { Title = "SkyWatch API", Version = "v1",
+    c.SwaggerDoc("v1", new() { Title = "Observable Smarts API", Version = "v1",
         Description = "OSINT Live Globe — satellite positions, flights, ships, and imagery" });
 });
 
@@ -25,12 +28,12 @@ builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient("Celestrak", c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("SkyWatch/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("ObservableSmarts/1.0");
 });
 builder.Services.AddHttpClient("OpenSky", c =>
 {
     c.Timeout = TimeSpan.FromSeconds(15);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("SkyWatch/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("ObservableSmarts/1.0");
 });
 builder.Services.AddHttpClient("AisHub", c =>
 {
@@ -39,12 +42,12 @@ builder.Services.AddHttpClient("AisHub", c =>
 builder.Services.AddHttpClient("Copernicus", c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("SkyWatch/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("ObservableSmarts/1.0");
 });
 builder.Services.AddHttpClient("USGS", c =>
 {
     c.Timeout = TimeSpan.FromSeconds(30);
-    c.DefaultRequestHeaders.UserAgent.ParseAdd("SkyWatch/1.0");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("ObservableSmarts/1.0");
 });
 
 // Application services
@@ -78,7 +81,7 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "SkyWatch API v1");
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Observable Smarts API v1");
 });
 
 app.UseCors();
