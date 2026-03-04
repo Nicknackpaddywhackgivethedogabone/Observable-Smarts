@@ -10,9 +10,11 @@ public class TleService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IMemoryCache _cache;
     private readonly ILogger<TleService> _logger;
+    private readonly ApiStatusService _apiStatus;
 
     private const string TleCacheKey = "tle_records";
     private const string PropagatorsCacheKey = "sgp4_propagators";
+    private const string SourceName = "Celestrak";
 
     // Celestrak TLE feed URLs
     private static readonly Dictionary<string, (string Url, SatelliteCategory Category)> TleFeeds = new()
@@ -26,11 +28,13 @@ public class TleService
         ["gps"] = ("https://celestrak.org/NORAD/elements/gp.php?GROUP=gps-ops&FORMAT=tle", SatelliteCategory.GPS),
     };
 
-    public TleService(IHttpClientFactory httpClientFactory, IMemoryCache cache, ILogger<TleService> logger)
+    public TleService(IHttpClientFactory httpClientFactory, IMemoryCache cache, ILogger<TleService> logger,
+        ApiStatusService apiStatus)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
+        _apiStatus = apiStatus;
     }
 
     public async Task RefreshTleDataAsync(CancellationToken ct = default)
@@ -77,6 +81,7 @@ public class TleService
 
         _logger.LogInformation("TLE refresh complete. {Count} satellites loaded, {PropCount} propagators built.",
             tleList.Count, propagators.Count);
+        _apiStatus.ReportSuccess(SourceName, tleList.Count);
     }
 
     public List<SatellitePosition> GetCurrentPositions(SatelliteCategory? categoryFilter = null)

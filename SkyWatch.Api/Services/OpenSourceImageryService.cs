@@ -10,16 +10,18 @@ public class OpenSourceImageryService
     private readonly IMemoryCache _cache;
     private readonly ILogger<OpenSourceImageryService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly ApiStatusService _apiStatus;
 
     private const string ImageryCacheKey = "imagery_scenes";
 
     public OpenSourceImageryService(IHttpClientFactory httpClientFactory, IMemoryCache cache,
-        ILogger<OpenSourceImageryService> logger, IConfiguration configuration)
+        ILogger<OpenSourceImageryService> logger, IConfiguration configuration, ApiStatusService apiStatus)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
         _configuration = configuration;
+        _apiStatus = apiStatus;
     }
 
     public async Task RefreshImageryAsync(CancellationToken ct = default)
@@ -33,6 +35,11 @@ public class OpenSourceImageryService
 
         _cache.Set(ImageryCacheKey, scenes, TimeSpan.FromMinutes(45));
         _logger.LogInformation("Imagery data refreshed: {Count} scenes", scenes.Count);
+
+        var copernicusCount = scenes.Count(s => s.Source == "Copernicus");
+        var usgsCount = scenes.Count(s => s.Source == "USGS");
+        if (copernicusCount > 0) _apiStatus.ReportSuccess("Copernicus", copernicusCount);
+        if (usgsCount > 0) _apiStatus.ReportSuccess("USGS", usgsCount);
     }
 
     public List<ImageryScene> GetRecentScenes()
@@ -94,6 +101,7 @@ public class OpenSourceImageryService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to fetch Copernicus imagery data");
+            _apiStatus.ReportFailure("Copernicus", ex.Message);
         }
     }
 
@@ -226,6 +234,7 @@ public class OpenSourceImageryService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to fetch USGS imagery data");
+            _apiStatus.ReportFailure("USGS", ex.Message);
         }
     }
 

@@ -50,6 +50,9 @@ builder.Services.AddHttpClient("USGS", c =>
     c.DefaultRequestHeaders.UserAgent.ParseAdd("ObservableSmarts/1.0");
 });
 
+// API status tracking (singleton — shared across all scoped services)
+builder.Services.AddSingleton<ApiStatusService>();
+
 // Application services
 builder.Services.AddScoped<TleService>();
 builder.Services.AddScoped<ImagingFootprintService>();

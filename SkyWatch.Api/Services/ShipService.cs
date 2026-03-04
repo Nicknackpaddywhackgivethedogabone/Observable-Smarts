@@ -10,17 +10,20 @@ public class ShipService
     private readonly IMemoryCache _cache;
     private readonly ILogger<ShipService> _logger;
     private readonly IConfiguration _configuration;
+    private readonly ApiStatusService _apiStatus;
 
     private const string ShipsCacheKey = "ships_data";
     private const string TrailsCacheKey = "ships_trails";
+    private const string SourceName = "AISHub";
 
     public ShipService(IHttpClientFactory httpClientFactory, IMemoryCache cache,
-        ILogger<ShipService> logger, IConfiguration configuration)
+        ILogger<ShipService> logger, IConfiguration configuration, ApiStatusService apiStatus)
     {
         _httpClientFactory = httpClientFactory;
         _cache = cache;
         _logger = logger;
         _configuration = configuration;
+        _apiStatus = apiStatus;
     }
 
     public async Task RefreshShipDataAsync(CancellationToken ct = default)
@@ -31,6 +34,7 @@ public class ShipService
             if (string.IsNullOrEmpty(apiKey))
             {
                 _logger.LogWarning("AISHub API key not configured. Ship data will not be available.");
+                _apiStatus.ReportFailure(SourceName, "API key not configured");
                 return;
             }
 
@@ -104,10 +108,12 @@ public class ShipService
             _cache.Set(TrailsCacheKey, trails, TimeSpan.FromMinutes(30));
 
             _logger.LogInformation("Ship data refreshed: {Count} vessels", ships.Count);
+            _apiStatus.ReportSuccess(SourceName, ships.Count);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to refresh ship data from AISHub");
+            _apiStatus.ReportFailure(SourceName, ex.Message);
         }
     }
 
