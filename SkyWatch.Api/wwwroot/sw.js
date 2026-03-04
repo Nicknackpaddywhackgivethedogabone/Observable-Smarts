@@ -1,5 +1,5 @@
-// SkyWatch Service Worker stub — PWA installability
-const CACHE_NAME = 'skywatch-v1';
+// Observable Smarts Service Worker stub — PWA installability
+const CACHE_NAME = 'observable-smarts-v1';
 
 self.addEventListener('install', (event) => {
     self.skipWaiting();

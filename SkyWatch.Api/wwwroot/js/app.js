@@ -1,4 +1,4 @@
-// SkyWatch — OSINT Live Globe
+// Observable Smarts — OSINT Live Globe
 // Main application JavaScript
 
 (function () {
@@ -547,6 +547,18 @@
                 }
                 break;
 
+            case 'noflyzone':
+                title.textContent = data.name;
+                html = `
+                    <div class="info-row"><span class="label">Designation</span><span class="value">${data.id}</span></div>
+                    <div class="info-row"><span class="label">Type</span><span class="value">${data.type}</span></div>
+                    <div class="info-row"><span class="label">Floor</span><span class="value">${data.floor.toLocaleString()} ft</span></div>
+                    <div class="info-row"><span class="label">Ceiling</span><span class="value">${data.ceiling >= 99999 ? 'Unlimited' : data.ceiling.toLocaleString() + ' ft'}</span></div>
+                    <div class="info-row"><span class="label">Radius</span><span class="value">${data.radiusKm} km</span></div>
+                    <div class="info-row"><span class="label">Center</span><span class="value">${data.center[1].toFixed(4)}&deg;, ${data.center[0].toFixed(4)}&deg;</span></div>
+                `;
+                break;
+
             default:
                 return;
         }
@@ -834,6 +846,191 @@
     // Update time display every second
     setInterval(updateTimeDisplay, 1000);
 
+    // ===== Settings Panel =====
+    document.getElementById('btn-settings').addEventListener('click', async function () {
+        document.getElementById('settings-overlay').classList.add('visible');
+
+        // Fetch key status
+        try {
+            const resp = await fetch(API_BASE + '/api/config/status');
+            if (resp.ok) {
+                const status = await resp.json();
+                for (const [key, configured] of Object.entries(status)) {
+                    const dot = document.getElementById('status-' + key);
+                    if (dot) {
+                        dot.className = 'key-status' + (configured ? ' configured' : '');
+                        dot.title = configured ? 'Configured' : 'Not set';
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Could not fetch key status:', e);
+        }
+    });
+
+    document.getElementById('settings-close').addEventListener('click', closeSettings);
+    document.getElementById('btn-cancel-keys').addEventListener('click', closeSettings);
+    document.getElementById('settings-overlay').addEventListener('click', function (e) {
+        if (e.target === this) closeSettings();
+    });
+
+    function closeSettings() {
+        document.getElementById('settings-overlay').classList.remove('visible');
+        document.getElementById('settings-message').textContent = '';
+        // Clear inputs
+        document.querySelectorAll('#settings-modal input').forEach(i => i.value = '');
+    }
+
+    document.getElementById('btn-save-keys').addEventListener('click', async function () {
+        const keys = {};
+        const keyNames = ['CesiumIonToken', 'OpenSkyUsername', 'OpenSkyPassword', 'AisHubApiKey', 'UsgsM2MUsername', 'UsgsM2MPassword'];
+        for (const name of keyNames) {
+            const val = document.getElementById('key-' + name).value.trim();
+            if (val) keys[name] = val;
+        }
+
+        if (Object.keys(keys).length === 0) {
+            document.getElementById('settings-message').innerHTML = '<span style="color: var(--accent-orange);">Enter at least one key to save.</span>';
+            return;
+        }
+
+        try {
+            const resp = await fetch(API_BASE + '/api/config/keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(keys)
+            });
+            const result = await resp.json();
+            document.getElementById('settings-message').innerHTML = '<span style="color: var(--accent-green);">' + result.message + '</span>';
+        } catch (e) {
+            document.getElementById('settings-message').innerHTML = '<span style="color: var(--accent-red);">Failed to save keys.</span>';
+        }
+    });
+
+    // ===== No-Fly Zone Layer =====
+    const nfzEntities = new Cesium.CustomDataSource('noflyzone');
+    viewer.dataSources.add(nfzEntities);
+
+    const nfzState = { enabled: false, filter: 'all', data: [] };
+
+    // FAA Special Use Airspace data (static dataset of well-known US restricted/prohibited areas)
+    const STATIC_AIRSPACE = [
+        // Prohibited Areas
+        { id: 'P-56A', name: 'P-56A — White House', type: 'Prohibited', center: [-77.0365, 38.8977], radiusKm: 1.3, floor: 0, ceiling: 18000, color: '#ef4444' },
+        { id: 'P-56B', name: 'P-56B — Naval Observatory', type: 'Prohibited', center: [-77.0700, 38.9177], radiusKm: 1.3, floor: 0, ceiling: 18000, color: '#ef4444' },
+        { id: 'P-49', name: 'P-49 — Camp David', type: 'Prohibited', center: [-77.4630, 39.6480], radiusKm: 5.6, floor: 0, ceiling: 99999, color: '#ef4444' },
+        { id: 'P-40', name: 'P-40 — Cape Canaveral', type: 'Prohibited', center: [-80.6041, 28.3922], radiusKm: 18, floor: 0, ceiling: 99999, color: '#ef4444' },
+        { id: 'P-204', name: 'P-204 — Pantex Nuclear Facility', type: 'Prohibited', center: [-101.9540, 35.3170], radiusKm: 7.4, floor: 0, ceiling: 15000, color: '#ef4444' },
+        { id: 'P-205', name: 'P-205 — Amarillo, TX', type: 'Prohibited', center: [-101.8410, 35.1830], radiusKm: 5.6, floor: 0, ceiling: 12500, color: '#ef4444' },
+        { id: 'P-67', name: 'P-67 — Bush Compound Kennebunkport', type: 'Prohibited', center: [-70.4490, 43.3520], radiusKm: 1.8, floor: 0, ceiling: 3000, color: '#ef4444' },
+
+        // Major Restricted Areas
+        { id: 'R-2508', name: 'R-2508 — Edwards AFB / China Lake', type: 'Restricted', center: [-117.6000, 35.7000], radiusKm: 80, floor: 0, ceiling: 99999, color: '#f97316' },
+        { id: 'R-2301', name: 'R-2301 — White Sands Missile Range', type: 'Restricted', center: [-106.3500, 32.9500], radiusKm: 60, floor: 0, ceiling: 99999, color: '#f97316' },
+        { id: 'R-4808N', name: 'R-4808N — Nellis / Groom Lake (Area 51)', type: 'Restricted', center: [-115.8000, 37.2350], radiusKm: 40, floor: 0, ceiling: 99999, color: '#f97316' },
+        { id: 'R-4809', name: 'R-4809 — Nevada Test Site', type: 'Restricted', center: [-116.0500, 36.8500], radiusKm: 35, floor: 0, ceiling: 99999, color: '#f97316' },
+        { id: 'R-5107', name: 'R-5107 — Fort Bragg', type: 'Restricted', center: [-79.0000, 35.1400], radiusKm: 15, floor: 0, ceiling: 20000, color: '#f97316' },
+        { id: 'R-2206', name: 'R-2206 — Fort Hood', type: 'Restricted', center: [-97.7700, 31.1400], radiusKm: 25, floor: 0, ceiling: 17999, color: '#f97316' },
+        { id: 'R-5601', name: 'R-5601 — Cherry Point MCAS', type: 'Restricted', center: [-76.9300, 34.9100], radiusKm: 18, floor: 0, ceiling: 50000, color: '#f97316' },
+        { id: 'R-6602', name: 'R-6602 — Eglin AFB', type: 'Restricted', center: [-86.5300, 30.4700], radiusKm: 45, floor: 0, ceiling: 99999, color: '#f97316' },
+        { id: 'R-3004', name: 'R-3004 — Aberdeen Proving Ground', type: 'Restricted', center: [-76.1500, 39.4700], radiusKm: 12, floor: 0, ceiling: 25000, color: '#f97316' },
+        { id: 'R-4401', name: 'R-4401 — Camp Atterbury', type: 'Restricted', center: [-86.0200, 39.3500], radiusKm: 10, floor: 0, ceiling: 13000, color: '#f97316' },
+
+        // Military Operations Areas (MOAs)
+        { id: 'MOA-Tombstone', name: 'Tombstone MOA — AZ', type: 'MOA', center: [-110.2000, 31.7000], radiusKm: 50, floor: 200, ceiling: 18000, color: '#f59e0b' },
+        { id: 'MOA-Condor', name: 'Condor MOA — CA', type: 'MOA', center: [-118.3000, 35.4000], radiusKm: 45, floor: 200, ceiling: 18000, color: '#f59e0b' },
+        { id: 'MOA-Juniper', name: 'Juniper MOA — OR', type: 'MOA', center: [-118.5000, 43.5000], radiusKm: 55, floor: 100, ceiling: 18000, color: '#f59e0b' },
+        { id: 'MOA-Bronco', name: 'Bronco MOA — TX', type: 'MOA', center: [-100.5000, 30.2000], radiusKm: 60, floor: 100, ceiling: 18000, color: '#f59e0b' },
+        { id: 'MOA-Hays', name: 'Hays MOA — KS', type: 'MOA', center: [-99.3000, 38.8000], radiusKm: 50, floor: 500, ceiling: 18000, color: '#f59e0b' },
+        { id: 'MOA-Whiskey', name: 'Whiskey MOA — NC', type: 'MOA', center: [-77.5000, 35.5000], radiusKm: 40, floor: 500, ceiling: 18000, color: '#f59e0b' },
+
+        // International Notable Zones
+        { id: 'NFZ-DMZ-KR', name: 'Korean DMZ', type: 'Prohibited', center: [127.5000, 38.0000], radiusKm: 100, floor: 0, ceiling: 99999, color: '#ef4444' },
+        { id: 'NFZ-Chernobyl', name: 'Chernobyl Exclusion Zone', type: 'Prohibited', center: [30.0987, 51.3890], radiusKm: 30, floor: 0, ceiling: 99999, color: '#ef4444' },
+        { id: 'NFZ-Dimona', name: 'Dimona Nuclear Facility — Israel', type: 'Restricted', center: [35.1470, 31.0020], radiusKm: 25, floor: 0, ceiling: 99999, color: '#f97316' },
+        { id: 'NFZ-Mecca', name: 'Mecca Haram — Saudi Arabia', type: 'Prohibited', center: [39.8262, 21.4225], radiusKm: 20, floor: 0, ceiling: 99999, color: '#ef4444' },
+        { id: 'NFZ-Buckingham', name: 'Buckingham Palace TRA — London', type: 'Restricted', center: [-0.1419, 51.5014], radiusKm: 2.5, floor: 0, ceiling: 2500, color: '#f97316' },
+    ];
+
+    function renderNoFlyZones() {
+        nfzEntities.entities.removeAll();
+        if (!nfzState.enabled) return;
+
+        const filter = nfzState.filter;
+        const zones = filter === 'all'
+            ? STATIC_AIRSPACE
+            : STATIC_AIRSPACE.filter(z => z.type === filter || (filter === 'TFR' && z.type === 'TFR'));
+
+        for (const zone of zones) {
+            const color = Cesium.Color.fromCssColorString(zone.color);
+
+            // Ground circle
+            nfzEntities.entities.add({
+                id: 'nfz-' + zone.id,
+                position: Cesium.Cartesian3.fromDegrees(zone.center[0], zone.center[1]),
+                ellipse: {
+                    semiMajorAxis: zone.radiusKm * 1000,
+                    semiMinorAxis: zone.radiusKm * 1000,
+                    material: color.withAlpha(0.12),
+                    outline: true,
+                    outlineColor: color.withAlpha(0.7),
+                    outlineWidth: 2,
+                    height: 0,
+                    classificationType: Cesium.ClassificationType.BOTH
+                },
+                label: {
+                    text: zone.id,
+                    font: '11px sans-serif',
+                    fillColor: color,
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 2,
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    verticalOrigin: Cesium.VerticalOrigin.CENTER,
+                    scaleByDistance: new Cesium.NearFarScalar(1e5, 1, 5e7, 0),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                },
+                properties: {
+                    type: 'noflyzone',
+                    data: zone
+                }
+            });
+
+            // 3D cylinder wall (shows vertical extent)
+            const floorM = zone.floor * 0.3048; // feet to meters
+            const ceilM = Math.min(zone.ceiling, 60000) * 0.3048;
+
+            nfzEntities.entities.add({
+                id: 'nfz-wall-' + zone.id,
+                position: Cesium.Cartesian3.fromDegrees(zone.center[0], zone.center[1]),
+                ellipse: {
+                    semiMajorAxis: zone.radiusKm * 1000,
+                    semiMinorAxis: zone.radiusKm * 1000,
+                    material: color.withAlpha(0.06),
+                    outline: true,
+                    outlineColor: color.withAlpha(0.3),
+                    height: floorM,
+                    extrudedHeight: ceilM
+                }
+            });
+        }
+    }
+
+    // No-fly zone toggle
+    document.getElementById('toggle-noflyzone').addEventListener('change', function () {
+        nfzState.enabled = this.checked;
+        nfzEntities.show = this.checked;
+        if (this.checked) renderNoFlyZones();
+        else nfzEntities.entities.removeAll();
+    });
+
+    // No-fly zone filter
+    document.querySelectorAll('input[name="nfz-filter"]').forEach(radio => {
+        radio.addEventListener('change', function () {
+            nfzState.filter = this.value;
+            renderNoFlyZones();
+        });
+    });
+
     // ===== Auto-refresh Loops =====
     function startRefreshLoops() {
         // Initial loads
@@ -851,6 +1048,6 @@
     startRefreshLoops();
     updateTimeDisplay();
 
-    console.log('SkyWatch initialized.');
+    console.log('Observable Smarts initialized.');
 
 })();

@@ -1,4 +1,4 @@
-/* SkyWatch — Global OSINT Live Globe */
+/* Observable Smarts — Global OSINT Live Globe */
 
 :root {
     --bg-dark: #0a0e17;
@@ -521,6 +521,101 @@ html, body {
         right: 8px;
         width: auto;
     }
+}
+
+/* ===== Settings Modal ===== */
+#settings-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 2000;
+    justify-content: center;
+    align-items: center;
+}
+
+#settings-overlay.visible {
+    display: flex;
+}
+
+#settings-modal {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    width: 420px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+#settings-modal .popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+#settings-modal .popup-header h4 {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.settings-body {
+    padding: 16px;
+}
+
+.settings-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+.settings-desc code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+}
+
+.settings-field {
+    margin-bottom: 10px;
+}
+
+.settings-field label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.settings-field input {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--bg-dark);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.settings-field input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+
+.key-status {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+.key-status.configured {
+    background: var(--accent-green);
 }
 
 /* Scrollbar styling */

@@ -1,4 +1,4 @@
-# SkyWatch OSINT Live Globe — Deployment Guide
+# Observable Smarts — OSINT Live Globe — Deployment Guide
 
 ## Prerequisites
 
@@ -19,11 +19,66 @@ Before deploying, set the API keys and credentials in your hosting environment. 
 | `AisHubApiKey` | AISHub API key for ship AIS data | Optional |
 | `UsgsM2MUsername` / `UsgsM2MPassword` | USGS M2M API for Landsat imagery feeds | Optional |
 
-These can be set as:
-- **`appsettings.Local.json`** (recommended for local dev) — copy `appsettings.Local.json.example` to `appsettings.Local.json` in the `SkyWatch.Api` folder, then fill in your keys. This file is git-ignored and will never be committed.
-- **Environment variables** — e.g. `CesiumIonToken=your_token_here`
-- **Azure App Settings** — in the Configuration blade
-- **User secrets** (local dev) — `dotnet user-secrets set "CesiumIonToken" "your_token_here"`
+These can be set using any of the methods below. They are listed in priority order — a value set via a higher-priority method overrides lower ones.
+
+### Method 1: `appsettings.Local.json` (recommended for local development)
+
+This is the simplest way to manage keys during development. The file lives alongside the other config files and is **git-ignored** so it never gets committed.
+
+**Location:** `SkyWatch.Api/appsettings.Local.json`
+
+**Setup:**
+```bash
+cd SkyWatch.Api
+cp appsettings.Local.json.example appsettings.Local.json
+# Now edit appsettings.Local.json with your real keys
+```
+
+**File contents:**
+```json
+{
+  "CesiumIonToken": "your_cesium_ion_token_here",
+  "AisHubApiKey": "your_aishub_api_key_here",
+  "UsgsM2MUsername": "your_usgs_username_here",
+  "UsgsM2MPassword": "your_usgs_password_here",
+  "OpenSkyUsername": "your_opensky_username_here",
+  "OpenSkyPassword": "your_opensky_password_here"
+}
+```
+
+The file is loaded automatically by `Program.cs` at startup. It is listed in `.gitignore` so `git status` will never show it.
+
+### Method 2: Environment variables
+
+Set them in your shell, systemd unit, or container runtime:
+```bash
+export CesiumIonToken=your_token_here
+export AisHubApiKey=your_key_here
+```
+
+### Method 3: Azure App Settings
+
+In the Azure Portal → your App Service → **Configuration** blade, add each key as an Application Setting.
+
+### Method 4: .NET User Secrets (local dev alternative)
+
+```bash
+cd SkyWatch.Api
+dotnet user-secrets init
+dotnet user-secrets set "CesiumIonToken" "your_token_here"
+dotnet user-secrets set "AisHubApiKey" "your_key_here"
+```
+
+Secrets are stored in `~/.microsoft/usersecrets/<user-secrets-id>/secrets.json` — completely outside the repository.
+
+### Where to get API keys
+
+| Key | Sign-up URL | Notes |
+|---|---|---|
+| `CesiumIonToken` | https://ion.cesium.com/tokens | Free tier available; needed for premium terrain/imagery |
+| `OpenSkyUsername` / `OpenSkyPassword` | https://opensky-network.org/register | Free; gives higher API rate limits |
+| `AisHubApiKey` | https://www.aishub.net/join | Requires sharing an AIS receiver or a fee |
+| `UsgsM2MUsername` / `UsgsM2MPassword` | https://ers.cr.usgs.gov/register | Free USGS EarthExplorer account |
 
 ---
 
