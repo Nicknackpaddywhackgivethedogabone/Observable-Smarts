@@ -623,6 +623,10 @@ html, body {
     color: var(--text-muted);
 }
 
+.key-status.expired {
+    background: var(--accent-red);
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
     width: 6px;
