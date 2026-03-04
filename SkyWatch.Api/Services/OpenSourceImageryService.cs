@@ -101,10 +101,14 @@ public class OpenSourceImageryService
     {
         try
         {
+            var apiToken = _configuration["UsgsM2MApiToken"];
             var username = _configuration["UsgsM2MUsername"];
             var password = _configuration["UsgsM2MPassword"];
 
-            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+            var hasToken = !string.IsNullOrEmpty(apiToken);
+            var hasCredentials = !string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password);
+
+            if (!hasToken && !hasCredentials)
             {
                 _logger.LogDebug("USGS M2M credentials not configured, skipping USGS imagery");
                 return;
@@ -113,20 +117,42 @@ public class OpenSourceImageryService
             var client = _httpClientFactory.CreateClient("USGS");
             var baseUrl = "https://m2m.cr.usgs.gov/api/api/json/stable";
 
-            // Login
-            var loginPayload = JsonSerializer.Serialize(new { username, password });
-            var loginResponse = await client.PostAsync($"{baseUrl}/login",
-                new StringContent(loginPayload, System.Text.Encoding.UTF8, "application/json"), ct);
-            var loginJson = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync(ct));
-            var apiKey = loginJson.RootElement.GetProperty("data").GetString();
+            string? authToken = null;
 
-            if (string.IsNullOrEmpty(apiKey))
+            // Try the API token first
+            if (hasToken)
             {
-                _logger.LogWarning("USGS login failed");
+                var valid = await ValidateUsgsToken(client, baseUrl, apiToken!, ct);
+                if (valid)
+                {
+                    authToken = apiToken;
+                    SkyWatch.Api.Controllers.ConfigController.UsgsTokenExpired = false;
+                    _logger.LogDebug("Using USGS API token");
+                }
+                else
+                {
+                    SkyWatch.Api.Controllers.ConfigController.UsgsTokenExpired = true;
+                    _logger.LogWarning("USGS API token is expired or invalid — falling back to username/password");
+                }
+            }
+
+            // Fall back to username/password login
+            if (authToken == null && hasCredentials)
+            {
+                var loginPayload = JsonSerializer.Serialize(new { username, password });
+                var loginResponse = await client.PostAsync($"{baseUrl}/login",
+                    new StringContent(loginPayload, System.Text.Encoding.UTF8, "application/json"), ct);
+                var loginJson = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync(ct));
+                authToken = loginJson.RootElement.GetProperty("data").GetString();
+            }
+
+            if (string.IsNullOrEmpty(authToken))
+            {
+                _logger.LogWarning("USGS authentication failed (all methods)");
                 return;
             }
 
-            client.DefaultRequestHeaders.Add("X-Auth-Token", apiKey);
+            client.DefaultRequestHeaders.Add("X-Auth-Token", authToken);
 
             // Search for recent Landsat scenes
             var searchPayload = JsonSerializer.Serialize(new
@@ -200,6 +226,33 @@ public class OpenSourceImageryService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to fetch USGS imagery data");
+        }
+    }
+
+    private async Task<bool> ValidateUsgsToken(HttpClient client, string baseUrl, string token, CancellationToken ct)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/dataset-catalogs");
+            request.Headers.Add("X-Auth-Token", token);
+            request.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+
+            var response = await client.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode)
+                return false;
+
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            // USGS M2M returns errorCode != null when auth fails
+            if (json.RootElement.TryGetProperty("errorCode", out var errorCode) &&
+                errorCode.ValueKind != JsonValueKind.Null)
+            {
+                return false;
+            }
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 

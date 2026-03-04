@@ -855,17 +855,26 @@
             const resp = await fetch(API_BASE + '/api/config/status');
             if (resp.ok) {
                 const status = await resp.json();
-                for (const [key, configured] of Object.entries(status)) {
+                for (const [key, value] of Object.entries(status)) {
+                    if (key === 'usgsTokenExpired') continue;
                     const dot = document.getElementById('status-' + key);
                     if (dot) {
-                        dot.className = 'key-status ' + (configured ? 'configured' : 'not-set');
-                        dot.textContent = configured ? 'Configured' : 'Not set';
-                        dot.title = configured ? 'This key is saved' : 'No key saved yet';
+                        dot.className = 'key-status ' + (value ? 'configured' : 'not-set');
+                        dot.textContent = value ? 'Configured' : 'Not set';
+                        dot.title = value ? 'This key is saved' : 'No key saved yet';
                     }
                     const input = document.getElementById('key-' + key);
                     if (input) {
-                        input.placeholder = configured ? '••••••• (saved — leave blank to keep)' : input.placeholder;
+                        input.placeholder = value ? '••••••• (saved — leave blank to keep)' : input.placeholder;
                     }
+                }
+
+                // Show USGS token expiry warning
+                const tokenDot = document.getElementById('status-UsgsM2MApiToken');
+                if (status.usgsTokenExpired && tokenDot) {
+                    tokenDot.className = 'key-status expired';
+                    tokenDot.textContent = 'Expired';
+                    tokenDot.title = 'Token was rejected by USGS — please replace it';
                 }
             }
         } catch (e) {
@@ -888,7 +897,7 @@
 
     document.getElementById('btn-save-keys').addEventListener('click', async function () {
         const keys = {};
-        const keyNames = ['CesiumIonToken', 'OpenSkyUsername', 'OpenSkyPassword', 'AisHubApiKey', 'UsgsM2MUsername', 'UsgsM2MPassword'];
+        const keyNames = ['CesiumIonToken', 'OpenSkyUsername', 'OpenSkyPassword', 'AisHubApiKey', 'UsgsM2MApiToken', 'UsgsM2MUsername', 'UsgsM2MPassword'];
         for (const name of keyNames) {
             const val = document.getElementById('key-' + name).value.trim();
             if (val) keys[name] = val;

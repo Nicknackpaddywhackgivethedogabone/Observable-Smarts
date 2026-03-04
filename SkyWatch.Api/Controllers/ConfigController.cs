@@ -13,9 +13,15 @@ public class ConfigController : ControllerBase
         "OpenSkyUsername",
         "OpenSkyPassword",
         "AisHubApiKey",
+        "UsgsM2MApiToken",
         "UsgsM2MUsername",
         "UsgsM2MPassword"
     };
+
+    /// <summary>
+    /// Set by OpenSourceImageryService when the USGS API token is rejected.
+    /// </summary>
+    public static volatile bool UsgsTokenExpired;
 
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
@@ -28,15 +34,17 @@ public class ConfigController : ControllerBase
 
     /// <summary>
     /// Returns which API keys are configured (true/false), never the actual values.
+    /// Also includes a usgsTokenExpired flag when the stored token has been rejected.
     /// </summary>
     [HttpGet("status")]
     public ActionResult GetKeyStatus()
     {
-        var status = new Dictionary<string, bool>();
+        var status = new Dictionary<string, object>();
         foreach (var key in KeyNames)
         {
             status[key] = !string.IsNullOrWhiteSpace(_config[key]);
         }
+        status["usgsTokenExpired"] = UsgsTokenExpired;
         return Ok(status);
     }
 
