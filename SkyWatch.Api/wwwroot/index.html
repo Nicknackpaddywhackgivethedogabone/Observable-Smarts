@@ -86,12 +86,27 @@
     <!-- Imagery Footprints -->
     <div class="panel-section">
         <h3>Recent Imagery</h3>
-        <div class="layer-toggle">
-            <span class="label"><span class="dot" style="background: var(--accent-purple)"></span> Imagery Footprints</span>
-            <label class="switch">
-                <input type="checkbox" id="toggle-imagery">
-                <span class="slider"></span>
-            </label>
+        <div class="layer-group">
+            <div class="layer-toggle">
+                <span class="label"><span class="dot" style="background: var(--accent-purple)"></span> Imagery Footprints</span>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-imagery">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="sub-filters" id="imagery-filters">
+                <label style="font-size: 11px; color: var(--text-secondary); display: block; margin-bottom: 2px;">Source</label>
+                <label><input type="radio" name="imagery-source" value="all" checked> All</label>
+                <label><input type="radio" name="imagery-source" value="Copernicus"> Copernicus</label>
+                <label><input type="radio" name="imagery-source" value="USGS"> USGS</label>
+                <label style="font-size: 11px; color: var(--text-secondary); display: block; margin-top: 4px; margin-bottom: 2px;">Sensor</label>
+                <label><input type="radio" name="imagery-sensor" value="all" checked> All Sensors</label>
+                <label><input type="radio" name="imagery-sensor" value="Sentinel-2 MSI"> Sentinel-2 MSI</label>
+                <label><input type="radio" name="imagery-sensor" value="Sentinel-1 SAR"> Sentinel-1 SAR</label>
+                <label><input type="radio" name="imagery-sensor" value="Sentinel-3"> Sentinel-3</label>
+                <label><input type="radio" name="imagery-sensor" value="Sentinel-5P"> Sentinel-5P</label>
+                <label><input type="radio" name="imagery-sensor" value="Landsat"> Landsat</label>
+            </div>
         </div>
     </div>
 
