@@ -8,19 +8,21 @@ public class SatellitePositionWorker : BackgroundService
     private readonly IConfiguration _configuration;
     private readonly ILogger<SatellitePositionWorker> _logger;
     private readonly DataCaptureService _capture;
+    private readonly WorkerToggleService _workerToggle;
 
     public SatellitePositionWorker(IServiceProvider services, IConfiguration configuration,
-        ILogger<SatellitePositionWorker> logger, DataCaptureService capture)
+        ILogger<SatellitePositionWorker> logger, DataCaptureService capture, WorkerToggleService workerToggle)
     {
         _services = services;
         _configuration = configuration;
         _logger = logger;
         _capture = capture;
+        _workerToggle = workerToggle;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Initial load
+        // Always load TLE data once at startup (lightweight catalog fetch)
         await RefreshTleData(stoppingToken);
 
         var intervalHours = _configuration.GetValue("TleRefreshIntervalHours", 4);
@@ -28,7 +30,10 @@ public class SatellitePositionWorker : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             await Task.Delay(TimeSpan.FromHours(intervalHours), stoppingToken);
-            await RefreshTleData(stoppingToken);
+            if (_workerToggle.IsEnabled("satellites"))
+            {
+                await RefreshTleData(stoppingToken);
+            }
         }
     }
 

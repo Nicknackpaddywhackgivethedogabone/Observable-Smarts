@@ -94,13 +94,18 @@
                     <span class="slider"></span>
                 </label>
             </div>
-            <button class="btn" id="btn-imagery-refresh" style="width: 100%; margin-top: 4px; font-size: 11px;">Refresh Imagery Now</button>
+            <div style="display: flex; gap: 4px; margin-top: 4px;">
+                <button class="btn" id="btn-refresh-copernicus" style="flex: 1; font-size: 10px; padding: 3px 4px;">Copernicus</button>
+                <button class="btn" id="btn-refresh-usgs" style="flex: 1; font-size: 10px; padding: 3px 4px;">USGS</button>
+                <button class="btn" id="btn-refresh-nasa" style="flex: 1; font-size: 10px; padding: 3px 4px;">NASA CMR</button>
+            </div>
             <div id="imagery-refresh-status" style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;"></div>
             <div class="sub-filters" id="imagery-filters">
                 <label style="font-size: 11px; color: var(--text-secondary); display: block; margin-bottom: 2px;">Source</label>
                 <label><input type="radio" name="imagery-source" value="all" checked> All</label>
                 <label><input type="radio" name="imagery-source" value="Copernicus"> Copernicus</label>
                 <label><input type="radio" name="imagery-source" value="USGS"> USGS</label>
+                <label><input type="radio" name="imagery-source" value="NASA CMR"> NASA CMR</label>
                 <label style="font-size: 11px; color: var(--text-secondary); display: block; margin-top: 4px; margin-bottom: 2px;">Sensor</label>
                 <label><input type="radio" name="imagery-sensor" value="all" checked> All Sensors</label>
                 <label><input type="radio" name="imagery-sensor" value="Sentinel-2 MSI"> Sentinel-2 MSI</label>
@@ -108,6 +113,7 @@
                 <label><input type="radio" name="imagery-sensor" value="Sentinel-3"> Sentinel-3</label>
                 <label><input type="radio" name="imagery-sensor" value="Sentinel-5P"> Sentinel-5P</label>
                 <label><input type="radio" name="imagery-sensor" value="Landsat"> Landsat</label>
+                <label><input type="radio" name="imagery-sensor" value="MODIS Terra"> MODIS Terra</label>
             </div>
         </div>
     </div>
@@ -275,8 +281,8 @@
                 <input type="text" id="key-UsgsM2MUsername" placeholder="Username">
             </div>
             <div class="settings-field">
-                <label>USGS M2M Password <span class="key-status" id="status-UsgsM2MPassword"></span></label>
-                <input type="password" id="key-UsgsM2MPassword" placeholder="Password">
+                <label>USGS M2M Application Token <span class="key-status" id="status-UsgsM2MPassword"></span></label>
+                <input type="password" id="key-UsgsM2MPassword" placeholder="Application token from ERS profile">
             </div>
             <div style="display: flex; gap: 8px; margin-top: 12px;">
                 <button class="btn btn-primary" id="btn-save-keys">Save Keys</button>

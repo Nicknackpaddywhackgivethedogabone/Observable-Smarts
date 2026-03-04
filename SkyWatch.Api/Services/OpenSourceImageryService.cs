@@ -33,23 +33,61 @@ public class OpenSourceImageryService
 
         await Task.WhenAll(
             FetchCopernicusScenes(scenes, ct),
-            FetchUsgsScenes(scenes, ct)
+            FetchUsgsScenes(scenes, ct),
+            FetchNasaCmrScenes(scenes, ct)
         );
 
         _cache.Set(ImageryCacheKey, scenes, TimeSpan.FromMinutes(45));
         _logger.LogInformation("Imagery data refreshed: {Count} scenes", scenes.Count);
 
-        var copernicusCount = scenes.Count(s => s.Source == "Copernicus");
-        var usgsCount = scenes.Count(s => s.Source == "USGS");
+        ReportSourceStatus(scenes, "Copernicus");
+        ReportSourceStatus(scenes, "USGS");
+        ReportSourceStatus(scenes, "NASA CMR");
+    }
 
-        // Always report status so the ticker shows something
-        if (copernicusCount > 0)
-            _apiStatus.ReportSuccess("Copernicus", copernicusCount);
+    /// <summary>
+    /// Refresh a single imagery source instead of all three.
+    /// </summary>
+    public async Task RefreshImagerySourceAsync(string source, CancellationToken ct)
+    {
+        var existing = _cache.Get<List<ImageryScene>>(ImageryCacheKey) ?? new List<ImageryScene>();
+        var newScenes = new List<ImageryScene>();
+
+        string normalizedSource;
+        switch (source.ToLowerInvariant())
+        {
+            case "copernicus":
+                normalizedSource = "Copernicus";
+                await FetchCopernicusScenes(newScenes, ct);
+                break;
+            case "usgs":
+                normalizedSource = "USGS";
+                await FetchUsgsScenes(newScenes, ct);
+                break;
+            case "nasa":
+            case "nasacmr":
+                normalizedSource = "NASA CMR";
+                await FetchNasaCmrScenes(newScenes, ct);
+                break;
+            default:
+                return;
+        }
+
+        // Replace scenes from this source, keep others
+        existing.RemoveAll(s => s.Source == normalizedSource);
+        existing.AddRange(newScenes);
+        _cache.Set(ImageryCacheKey, existing, TimeSpan.FromMinutes(45));
+
+        ReportSourceStatus(existing, normalizedSource);
+    }
+
+    private void ReportSourceStatus(List<ImageryScene> scenes, string source)
+    {
+        var count = scenes.Count(s => s.Source == source);
+        if (count > 0)
+            _apiStatus.ReportSuccess(source, count);
         else
-            _apiStatus.ReportFailure("Copernicus", "0 scenes returned");
-
-        if (usgsCount > 0)
-            _apiStatus.ReportSuccess("USGS", usgsCount);
+            _apiStatus.ReportFailure(source, "0 scenes returned");
     }
 
     public List<ImageryScene> GetRecentScenes()
@@ -70,7 +108,8 @@ public class OpenSourceImageryService
         {
             scenesInCache = cached?.Count ?? 0,
             copernicusScenes = cached?.Count(s => s.Source == "Copernicus") ?? 0,
-            usgsScenes = cached?.Count(s => s.Source == "USGS") ?? 0
+            usgsScenes = cached?.Count(s => s.Source == "USGS") ?? 0,
+            nasaCmrScenes = cached?.Count(s => s.Source == "NASA CMR") ?? 0
         };
 
         // Test Copernicus
@@ -143,7 +182,10 @@ public class OpenSourceImageryService
                       "$top=50&" +
                       "$select=Id,Name,ContentDate,GeoFootprint,S3Path";
 
-            var httpResponse = await client.GetAsync(url, ct);
+            // 15-second timeout so we fail fast if Copernicus is unreachable
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+            var httpResponse = await client.GetAsync(url, timeoutCts.Token);
             var statusCode = (int)httpResponse.StatusCode;
             var response = await httpResponse.Content.ReadAsStringAsync(ct);
 
@@ -192,7 +234,7 @@ public class OpenSourceImageryService
                             scene.Footprint = ParseGeoJsonPolygon(footprint);
                         }
 
-                        scenes.Add(scene);
+                        lock (scenes) { scenes.Add(scene); }
                     }
                     catch (Exception ex)
                     {
@@ -274,24 +316,33 @@ public class OpenSourceImageryService
                 }
             }
 
-            // Fall back to username/password login
+            // Fall back to login-token (replaces deprecated /login endpoint)
             if (authToken == null && hasCredentials)
             {
-                var loginPayload = JsonSerializer.Serialize(new { username, password });
-                var loginResponse = await client.PostAsync($"{baseUrl}/login",
+                // USGS M2M now uses /login-token with { username, token } where
+                // token = the application token (stored in UsgsM2MPassword config key)
+                var loginPayload = JsonSerializer.Serialize(new { username, token = password });
+                var loginResponse = await client.PostAsync($"{baseUrl}/login-token",
                     new StringContent(loginPayload, System.Text.Encoding.UTF8, "application/json"), ct);
                 var loginBody = await loginResponse.Content.ReadAsStringAsync(ct);
 
                 _capture.LogData("diagnostics", new
                 {
                     source = "USGS",
-                    step = "login",
+                    step = "login-token",
                     httpStatus = (int)loginResponse.StatusCode,
                     responsePreview = loginBody.Length > 500 ? loginBody[..500] : loginBody
                 });
 
-                var loginJson = JsonDocument.Parse(loginBody);
-                authToken = loginJson.RootElement.GetProperty("data").GetString();
+                if (loginResponse.IsSuccessStatusCode)
+                {
+                    var loginJson = JsonDocument.Parse(loginBody);
+                    authToken = loginJson.RootElement.GetProperty("data").GetString();
+                }
+                else
+                {
+                    _logger.LogWarning("USGS login-token returned HTTP {StatusCode}", (int)loginResponse.StatusCode);
+                }
             }
 
             if (string.IsNullOrEmpty(authToken))
@@ -369,7 +420,7 @@ public class OpenSourceImageryService
                             scene.Footprint = ParseGeoJsonPolygon(spatial);
                         }
 
-                        scenes.Add(scene);
+                        lock (scenes) { scenes.Add(scene); }
                     }
                     catch
                     {
@@ -395,6 +446,154 @@ public class OpenSourceImageryService
             _capture.LogData("diagnostics", new
             {
                 source = "USGS",
+                error = ex.Message,
+                errorType = ex.GetType().Name,
+                stackTrace = ex.StackTrace
+            });
+        }
+    }
+
+    private async Task FetchNasaCmrScenes(List<ImageryScene> scenes, CancellationToken ct)
+    {
+        string url = "";
+        try
+        {
+            var client = _httpClientFactory.CreateClient("NasaCMR");
+            var since = DateTime.UtcNow.AddHours(-24).ToString("yyyy-MM-ddTHH:mm:ss.000Z");
+
+            url = $"https://cmr.earthdata.nasa.gov/search/granules.json" +
+                  $"?short_name=MOD09GA&provider=LPCLOUD" +
+                  $"&temporal={since}," +
+                  $"&page_size=25&sort_key=-start_date";
+
+            var httpResponse = await client.GetAsync(url, ct);
+            var statusCode = (int)httpResponse.StatusCode;
+            var response = await httpResponse.Content.ReadAsStringAsync(ct);
+
+            _capture.LogData("diagnostics", new
+            {
+                source = "NASA CMR",
+                url,
+                httpStatus = statusCode,
+                responseLength = response.Length,
+                responsePreview = response.Length > 2000 ? response[..2000] + "...[truncated]" : response,
+                success = httpResponse.IsSuccessStatusCode
+            });
+
+            if (!httpResponse.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("NASA CMR returned HTTP {StatusCode}", statusCode);
+                _apiStatus.ReportFailure("NASA CMR", $"HTTP {statusCode}", statusCode);
+                return;
+            }
+
+            var json = JsonDocument.Parse(response);
+
+            if (json.RootElement.TryGetProperty("feed", out var feed) &&
+                feed.TryGetProperty("entry", out var entries))
+            {
+                foreach (var item in entries.EnumerateArray())
+                {
+                    try
+                    {
+                        var title = item.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                        var timeStart = item.TryGetProperty("time_start", out var ts) ? ts.GetString() : null;
+
+                        var scene = new ImageryScene
+                        {
+                            Id = item.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : Guid.NewGuid().ToString(),
+                            Source = "NASA CMR",
+                            Sensor = "MODIS Terra",
+                            AcquisitionDate = timeStart != null ? DateTime.Parse(timeStart) : DateTime.UtcNow,
+                        };
+
+                        // Extract browse image URL from links
+                        if (item.TryGetProperty("links", out var links))
+                        {
+                            foreach (var link in links.EnumerateArray())
+                            {
+                                var rel = link.TryGetProperty("rel", out var r) ? r.GetString() : "";
+                                var href = link.TryGetProperty("href", out var h) ? h.GetString() : "";
+                                if (rel != null && rel.Contains("browse") && href != null)
+                                {
+                                    scene.ThumbnailUrl = href;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Parse bounding box → polygon footprint
+                        if (item.TryGetProperty("boxes", out var boxes) && boxes.GetArrayLength() > 0)
+                        {
+                            var boxStr = boxes[0].GetString();
+                            if (boxStr != null)
+                            {
+                                // CMR box format: "south west north east"
+                                var parts = boxStr.Split(' ');
+                                if (parts.Length == 4 &&
+                                    double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var south) &&
+                                    double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var west) &&
+                                    double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var north) &&
+                                    double.TryParse(parts[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var east))
+                                {
+                                    scene.Footprint = new GeoJsonPolygon
+                                    {
+                                        Type = "Polygon",
+                                        Coordinates = new[]
+                                        {
+                                            new[]
+                                            {
+                                                new[] { west, south },
+                                                new[] { east, south },
+                                                new[] { east, north },
+                                                new[] { west, north },
+                                                new[] { west, south }
+                                            }
+                                        }
+                                    };
+                                }
+                            }
+                        }
+
+                        // Data download URL
+                        if (item.TryGetProperty("links", out var dataLinks))
+                        {
+                            foreach (var link in dataLinks.EnumerateArray())
+                            {
+                                var href = link.TryGetProperty("href", out var h) ? h.GetString() : "";
+                                var rel = link.TryGetProperty("rel", out var r) ? r.GetString() : "";
+                                if (href != null && href.Contains("e4ftl01.cr.usgs.gov"))
+                                {
+                                    scene.FullImageUrl = href;
+                                    break;
+                                }
+                            }
+                        }
+
+                        lock (scenes) { scenes.Add(scene); }
+                    }
+                    catch (Exception ex)
+                    {
+                        _capture.LogData("diagnostics", new
+                        {
+                            source = "NASA CMR",
+                            issue = "malformed_granule_entry",
+                            error = ex.Message
+                        });
+                    }
+                }
+            }
+
+            _logger.LogInformation("Loaded {Count} NASA CMR scenes", scenes.Count(s => s.Source == "NASA CMR"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch NASA CMR imagery data");
+            _apiStatus.ReportFailure("NASA CMR", ex.Message);
+            _capture.LogData("diagnostics", new
+            {
+                source = "NASA CMR",
+                url,
                 error = ex.Message,
                 errorType = ex.GetType().Name,
                 stackTrace = ex.StackTrace

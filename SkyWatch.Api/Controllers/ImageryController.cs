@@ -35,7 +35,7 @@ public class ImageryController : ControllerBase
     }
 
     /// <summary>
-    /// Manually trigger an imagery refresh instead of waiting for the 30-minute cycle.
+    /// Manually trigger an imagery refresh for all sources.
     /// </summary>
     [HttpPost("refresh")]
     public async Task<IActionResult> Refresh(CancellationToken ct)
@@ -47,7 +47,31 @@ public class ImageryController : ControllerBase
             message = "Imagery refresh complete",
             totalScenes = scenes.Count,
             copernicus = scenes.Count(s => s.Source == "Copernicus"),
-            usgs = scenes.Count(s => s.Source == "USGS")
+            usgs = scenes.Count(s => s.Source == "USGS"),
+            nasaCmr = scenes.Count(s => s.Source == "NASA CMR")
+        });
+    }
+
+    /// <summary>
+    /// Manually trigger an imagery refresh for a single source (copernicus, usgs, nasa).
+    /// </summary>
+    [HttpPost("refresh/{source}")]
+    public async Task<IActionResult> RefreshSource(string source, CancellationToken ct)
+    {
+        await _imageryService.RefreshImagerySourceAsync(source, ct);
+        var scenes = _imageryService.GetRecentScenes();
+        var sourceLabel = source.ToLowerInvariant() switch
+        {
+            "nasa" or "nasacmr" => "NASA CMR",
+            _ => source
+        };
+        var count = scenes.Count(s => s.Source.Equals(sourceLabel, StringComparison.OrdinalIgnoreCase));
+        return Ok(new
+        {
+            message = $"{sourceLabel} refresh complete",
+            source = sourceLabel,
+            sceneCount = count,
+            totalScenes = scenes.Count
         });
     }
 }

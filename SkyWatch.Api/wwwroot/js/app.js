@@ -806,35 +806,83 @@
         document.getElementById('roi-results').innerHTML = html;
     });
 
-    // ===== Layer Toggles =====
+    // ===== On-Demand Layer Toggles =====
+    // Track interval IDs so we can stop polling when toggled off
+    const refreshIntervals = {};
+
+    async function enableStream(stream) {
+        try { await fetch(`/api/workers/${stream}/enable`, { method: 'POST' }); } catch (e) { console.warn('Failed to enable worker:', e); }
+    }
+    async function disableStream(stream) {
+        try { await fetch(`/api/workers/${stream}/disable`, { method: 'POST' }); } catch (e) { console.warn('Failed to disable worker:', e); }
+    }
+
     document.getElementById('toggle-satellites').addEventListener('change', function () {
         state.satellites.enabled = this.checked;
         satelliteEntities.show = this.checked;
-        if (this.checked) refreshSatellites();
+        if (this.checked) {
+            enableStream('satellites');
+            refreshSatellites();
+            refreshIntervals.satellites = setInterval(refreshSatellites, REFRESH_INTERVALS.satellites);
+        } else {
+            disableStream('satellites');
+            clearInterval(refreshIntervals.satellites);
+            satelliteEntities.entities.removeAll();
+        }
     });
 
     document.getElementById('toggle-swaths').addEventListener('change', function () {
         state.swaths.enabled = this.checked;
         swathEntities.show = this.checked;
-        if (this.checked) refreshSwaths();
+        if (this.checked) {
+            refreshSwaths();
+            refreshIntervals.swaths = setInterval(refreshSwaths, REFRESH_INTERVALS.swaths);
+        } else {
+            clearInterval(refreshIntervals.swaths);
+            swathEntities.entities.removeAll();
+        }
     });
 
     document.getElementById('toggle-imagery').addEventListener('change', function () {
         state.imagery.enabled = this.checked;
         imageryEntities.show = this.checked;
-        if (this.checked) refreshImagery();
+        if (this.checked) {
+            enableStream('imagery');
+            refreshImagery();
+            refreshIntervals.imagery = setInterval(refreshImagery, REFRESH_INTERVALS.imagery);
+        } else {
+            disableStream('imagery');
+            clearInterval(refreshIntervals.imagery);
+            imageryEntities.entities.removeAll();
+        }
     });
 
     document.getElementById('toggle-flights').addEventListener('change', function () {
         state.flights.enabled = this.checked;
         flightEntities.show = this.checked;
-        if (this.checked) refreshFlights();
+        if (this.checked) {
+            enableStream('flights');
+            refreshFlights();
+            refreshIntervals.flights = setInterval(refreshFlights, REFRESH_INTERVALS.flights);
+        } else {
+            disableStream('flights');
+            clearInterval(refreshIntervals.flights);
+            flightEntities.entities.removeAll();
+        }
     });
 
     document.getElementById('toggle-ships').addEventListener('change', function () {
         state.ships.enabled = this.checked;
         shipEntities.show = this.checked;
-        if (this.checked) refreshShips();
+        if (this.checked) {
+            enableStream('ships');
+            refreshShips();
+            refreshIntervals.ships = setInterval(refreshShips, REFRESH_INTERVALS.ships);
+        } else {
+            disableStream('ships');
+            clearInterval(refreshIntervals.ships);
+            shipEntities.entities.removeAll();
+        }
     });
 
     // Satellite category filter
@@ -877,27 +925,33 @@
         });
     });
 
-    // ===== Imagery Manual Refresh =====
-    document.getElementById('btn-imagery-refresh').addEventListener('click', async function () {
-        const statusEl = document.getElementById('imagery-refresh-status');
-        this.disabled = true;
-        this.textContent = 'Refreshing...';
-        statusEl.textContent = '';
+    // ===== Per-Source Imagery Refresh =====
+    function setupSourceRefresh(btnId, source) {
+        document.getElementById(btnId).addEventListener('click', async function () {
+            const statusEl = document.getElementById('imagery-refresh-status');
+            const originalText = this.textContent;
+            this.disabled = true;
+            this.textContent = '...';
+            statusEl.textContent = '';
 
-        try {
-            const resp = await fetch('/api/imagery/refresh', { method: 'POST' });
-            const result = await resp.json();
-            statusEl.textContent = `${result.totalScenes} scenes (Copernicus: ${result.copernicus}, USGS: ${result.usgs})`;
-            if (state.imagery.enabled) {
-                await refreshImagery();
+            try {
+                const resp = await fetch(`/api/imagery/refresh/${source}`, { method: 'POST' });
+                const result = await resp.json();
+                statusEl.textContent = `${result.source}: ${result.sceneCount} scenes (total: ${result.totalScenes})`;
+                if (state.imagery.enabled) {
+                    await refreshImagery();
+                }
+            } catch (err) {
+                statusEl.textContent = `${source} refresh failed: ${err.message}`;
             }
-        } catch (err) {
-            statusEl.textContent = 'Refresh failed: ' + err.message;
-        }
 
-        this.disabled = false;
-        this.textContent = 'Refresh Imagery Now';
-    });
+            this.disabled = false;
+            this.textContent = originalText;
+        });
+    }
+    setupSourceRefresh('btn-refresh-copernicus', 'copernicus');
+    setupSourceRefresh('btn-refresh-usgs', 'usgs');
+    setupSourceRefresh('btn-refresh-nasa', 'nasa');
 
     // ===== Sidebar Toggle (Mobile) =====
     document.getElementById('sidebar-toggle').addEventListener('click', function () {
@@ -1402,21 +1456,22 @@
     setInterval(refreshApiStatus, 5000);
     refreshApiStatus();
 
-    // ===== Auto-refresh Loops =====
-    function startRefreshLoops() {
-        // Initial loads
-        refreshSatellites();
-        refreshSwaths();
-
-        // Periodic refresh
-        setInterval(refreshSatellites, REFRESH_INTERVALS.satellites);
-        setInterval(refreshSwaths, REFRESH_INTERVALS.swaths);
-        setInterval(refreshFlights, REFRESH_INTERVALS.flights);
-        setInterval(refreshShips, REFRESH_INTERVALS.ships);
-        setInterval(refreshImagery, REFRESH_INTERVALS.imagery);
+    // ===== On-Demand Startup =====
+    // Only start streams that are toggled on by default (satellites + swaths)
+    function startEnabledStreams() {
+        if (state.satellites.enabled) {
+            enableStream('satellites');
+            refreshSatellites();
+            refreshIntervals.satellites = setInterval(refreshSatellites, REFRESH_INTERVALS.satellites);
+        }
+        if (state.swaths.enabled) {
+            refreshSwaths();
+            refreshIntervals.swaths = setInterval(refreshSwaths, REFRESH_INTERVALS.swaths);
+        }
+        // flights, ships, imagery start disabled — user toggles them on
     }
 
-    startRefreshLoops();
+    startEnabledStreams();
     updateTimeDisplay();
 
     console.log('Observable Smarts initialized.');
