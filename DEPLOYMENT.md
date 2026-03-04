@@ -20,6 +20,7 @@ Before deploying, set the API keys and credentials in your hosting environment. 
 | `UsgsM2MUsername` / `UsgsM2MPassword` | USGS M2M API for Landsat imagery feeds | Optional |
 
 These can be set as:
+- **`appsettings.Local.json`** (recommended for local dev) — copy `appsettings.Local.json.example` to `appsettings.Local.json` in the `SkyWatch.Api` folder, then fill in your keys. This file is git-ignored and will never be committed.
 - **Environment variables** — e.g. `CesiumIonToken=your_token_here`
 - **Azure App Settings** — in the Configuration blade
 - **User secrets** (local dev) — `dotnet user-secrets set "CesiumIonToken" "your_token_here"`
@@ -42,9 +43,8 @@ These can be set as:
 | **Deployment Mode** | `Self-contained` |
 | **Target Runtime** | Match your server — `win-x64`, `linux-x64`, or `linux-arm64` |
 | **Target Location** | `bin\Release\net8.0\publish\` |
-| **File Publish Options** | Check **Produce single file** |
+| **File Publish Options** | Check **Enable ReadyToRun compilation** (faster cold start, optional) |
 | | Check **Trim unused assemblies** (optional, reduces size) |
-| | Check **Enable ReadyToRun compilation** (faster cold start) |
 
 5. Click **Save** → **Publish**
 
@@ -93,8 +93,8 @@ The output folder will contain everything needed to run the app, including the .
 # Framework-dependent (requires .NET 8 runtime on server)
 dotnet publish SkyWatch.Api/SkyWatch.Api.csproj -c Release -o ./publish
 
-# Self-contained single-file for Linux
-dotnet publish SkyWatch.Api/SkyWatch.Api.csproj -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o ./publish
+# Self-contained for Linux
+dotnet publish SkyWatch.Api/SkyWatch.Api.csproj -c Release -r linux-x64 --self-contained -o ./publish
 ```
 
 ---

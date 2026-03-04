@@ -1,0 +1,8 @@
+{
+  "CesiumIonToken": "your_cesium_ion_token_here",
+  "AisHubApiKey": "your_aishub_api_key_here",
+  "UsgsM2MUsername": "your_usgs_username_here",
+  "UsgsM2MPassword": "your_usgs_password_here",
+  "OpenSkyUsername": "your_opensky_username_here",
+  "OpenSkyPassword": "your_opensky_password_here"
+}

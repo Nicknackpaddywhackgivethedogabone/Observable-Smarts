@@ -3,6 +3,9 @@ using SkyWatch.Api.Workers;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Load local secrets file (not committed to source control)
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
 // Add services
 builder.Services.AddControllers()
     .AddJsonOptions(o =>
