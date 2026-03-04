@@ -78,17 +78,25 @@ public class FlightService
 
                 if (lat == null || lon == null) continue;
 
+                var emitterCat = arr.Length > 17 && arr[17].ValueKind == JsonValueKind.Number
+                    ? (int?)arr[17].GetInt32() : null;
+                var callsign = arr[1].GetString()?.Trim();
+
                 var flight = new FlightPosition
                 {
                     Icao24 = icao24,
-                    Callsign = arr[1].GetString()?.Trim(),
+                    Callsign = callsign,
                     Longitude = lon,
                     Latitude = lat,
                     AltitudeM = arr[7].ValueKind == JsonValueKind.Number ? arr[7].GetDouble() : null,
                     VelocityMs = arr[9].ValueKind == JsonValueKind.Number ? arr[9].GetDouble() : null,
                     Heading = arr[10].ValueKind == JsonValueKind.Number ? arr[10].GetDouble() : null,
                     OnGround = arr[8].ValueKind == JsonValueKind.True,
-                    Category = ClassifyFlight(icao24, arr[1].GetString()?.Trim()),
+                    OriginCountry = arr[2].GetString(),
+                    VerticalRate = arr[11].ValueKind == JsonValueKind.Number ? arr[11].GetDouble() : null,
+                    Squawk = arr[14].ValueKind != JsonValueKind.Null ? arr[14].GetString() : null,
+                    EmitterCategory = emitterCat,
+                    Category = ClassifyFlight(icao24, callsign, emitterCat),
                     Timestamp = DateTime.UtcNow
                 };
 
@@ -234,7 +242,57 @@ public class FlightService
         return flights?.FirstOrDefault(f => f.Icao24.Equals(icao24, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static FlightCategory ClassifyFlight(string icao24, string? callsign)
+    public async Task<AircraftMetadata?> GetAircraftMetadataAsync(string icao24, CancellationToken ct = default)
+    {
+        var cacheKey = $"aircraft_meta_{icao24}";
+        if (_cache.TryGetValue(cacheKey, out AircraftMetadata? cached))
+            return cached;
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient("OpenSky");
+            var request = new HttpRequestMessage(HttpMethod.Get,
+                $"https://opensky-network.org/api/metadata/aircraft/icao/{icao24}");
+
+            // Add auth if available
+            var clientId = _configuration["OpenSkyClientId"];
+            var clientSecret = _configuration["OpenSkyClientSecret"];
+            if (!string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(clientSecret))
+            {
+                var token = await GetOAuthTokenAsync(clientId, clientSecret, ct);
+                if (!string.IsNullOrEmpty(token))
+                    request.Headers.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            }
+
+            var response = await client.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            var root = json.RootElement;
+
+            var metadata = new AircraftMetadata
+            {
+                Icao24 = icao24,
+                Manufacturer = root.TryGetProperty("manufacturerName", out var m) ? m.GetString() : null,
+                Model = root.TryGetProperty("model", out var mo) ? mo.GetString() : null,
+                Operator = root.TryGetProperty("operator", out var op) ? op.GetString() : null,
+                Owner = root.TryGetProperty("owner", out var ow) ? ow.GetString() : null,
+                Registration = root.TryGetProperty("registration", out var r) ? r.GetString() : null,
+                TypeCode = root.TryGetProperty("typecode", out var tc) ? tc.GetString() : null,
+            };
+
+            _cache.Set(cacheKey, metadata, TimeSpan.FromHours(24));
+            return metadata;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to fetch aircraft metadata for {Icao24}", icao24);
+            return null;
+        }
+    }
+
+    private static FlightCategory ClassifyFlight(string icao24, string? callsign, int? emitterCategory = null)
     {
         if (string.IsNullOrEmpty(icao24)) return FlightCategory.Unknown;
 
@@ -243,6 +301,21 @@ public class FlightService
         if (icaoUpper.StartsWith("AE") || icaoUpper.StartsWith("AF") ||
             icaoUpper.StartsWith("43C") || icaoUpper.StartsWith("43D"))
             return FlightCategory.Military;
+
+        // Use ADS-B emitter category when available
+        if (emitterCategory.HasValue && emitterCategory.Value > 0)
+        {
+            return emitterCategory.Value switch
+            {
+                2 => FlightCategory.GeneralAviation,  // Light < 15,500 lbs
+                3 or 4 or 5 or 6 => FlightCategory.Commercial, // Small/Large/Heavy
+                7 => FlightCategory.Military,          // High performance > 5g
+                8 => FlightCategory.GeneralAviation,   // Rotorcraft
+                9 or 10 or 11 or 12 => FlightCategory.GeneralAviation, // Glider/balloon/para/ultralight
+                14 => FlightCategory.GeneralAviation,  // UAV
+                _ => FlightCategory.Unknown
+            };
+        }
 
         if (string.IsNullOrEmpty(callsign)) return FlightCategory.Unknown;
 

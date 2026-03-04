@@ -7,13 +7,15 @@ public class SatellitePositionWorker : BackgroundService
     private readonly IServiceProvider _services;
     private readonly IConfiguration _configuration;
     private readonly ILogger<SatellitePositionWorker> _logger;
+    private readonly DataCaptureService _capture;
 
     public SatellitePositionWorker(IServiceProvider services, IConfiguration configuration,
-        ILogger<SatellitePositionWorker> logger)
+        ILogger<SatellitePositionWorker> logger, DataCaptureService capture)
     {
         _services = services;
         _configuration = configuration;
         _logger = logger;
+        _capture = capture;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -37,6 +39,9 @@ public class SatellitePositionWorker : BackgroundService
             using var scope = _services.CreateScope();
             var tleService = scope.ServiceProvider.GetRequiredService<TleService>();
             await tleService.RefreshTleDataAsync(ct);
+
+            if (_capture.IsEnabled)
+                _capture.LogData("satellites", tleService.GetCurrentPositions());
         }
         catch (Exception ex)
         {

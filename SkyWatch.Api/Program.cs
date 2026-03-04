@@ -58,6 +58,9 @@ builder.Services.AddHttpClient("USGS", c =>
 // API status tracking (singleton — shared across all scoped services)
 builder.Services.AddSingleton<ApiStatusService>();
 
+// Data capture logging (singleton — toggled via web UI)
+builder.Services.AddSingleton<DataCaptureService>();
+
 // Application services
 builder.Services.AddScoped<TleService>();
 builder.Services.AddScoped<ImagingFootprintService>();

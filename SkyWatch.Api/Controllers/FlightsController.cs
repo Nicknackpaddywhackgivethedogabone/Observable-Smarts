@@ -35,4 +35,17 @@ public class FlightsController : ControllerBase
             return NotFound(new { message = $"Flight {icao24} not found" });
         return Ok(flight);
     }
+
+    /// <summary>
+    /// Lookup aircraft metadata (manufacturer, model, operator) by ICAO24 hex address.
+    /// Proxies to OpenSky aircraft metadata API.
+    /// </summary>
+    [HttpGet("{icao24}/metadata")]
+    public async Task<IActionResult> GetMetadata(string icao24, CancellationToken ct)
+    {
+        var metadata = await _flightService.GetAircraftMetadataAsync(icao24, ct);
+        if (metadata == null)
+            return NotFound(new { message = $"No metadata found for {icao24}" });
+        return Ok(metadata);
+    }
 }

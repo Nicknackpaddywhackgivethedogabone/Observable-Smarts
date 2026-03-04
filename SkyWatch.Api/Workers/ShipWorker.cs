@@ -7,13 +7,15 @@ public class ShipWorker : BackgroundService
     private readonly IServiceProvider _services;
     private readonly IConfiguration _configuration;
     private readonly ILogger<ShipWorker> _logger;
+    private readonly DataCaptureService _capture;
 
     public ShipWorker(IServiceProvider services, IConfiguration configuration,
-        ILogger<ShipWorker> logger)
+        ILogger<ShipWorker> logger, DataCaptureService capture)
     {
         _services = services;
         _configuration = configuration;
         _logger = logger;
+        _capture = capture;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -29,6 +31,9 @@ public class ShipWorker : BackgroundService
                 using var scope = _services.CreateScope();
                 var shipService = scope.ServiceProvider.GetRequiredService<ShipService>();
                 await shipService.RefreshShipDataAsync(stoppingToken);
+
+                if (_capture.IsEnabled)
+                    _capture.LogData("ships", shipService.GetShips());
             }
             catch (Exception ex)
             {

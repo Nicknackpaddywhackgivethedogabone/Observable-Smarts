@@ -7,13 +7,15 @@ public class FlightWorker : BackgroundService
     private readonly IServiceProvider _services;
     private readonly IConfiguration _configuration;
     private readonly ILogger<FlightWorker> _logger;
+    private readonly DataCaptureService _capture;
 
     public FlightWorker(IServiceProvider services, IConfiguration configuration,
-        ILogger<FlightWorker> logger)
+        ILogger<FlightWorker> logger, DataCaptureService capture)
     {
         _services = services;
         _configuration = configuration;
         _logger = logger;
+        _capture = capture;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -30,6 +32,9 @@ public class FlightWorker : BackgroundService
                 using var scope = _services.CreateScope();
                 var flightService = scope.ServiceProvider.GetRequiredService<FlightService>();
                 await flightService.RefreshFlightDataAsync(stoppingToken);
+
+                if (_capture.IsEnabled)
+                    _capture.LogData("flights", flightService.GetFlights());
             }
             catch (Exception ex)
             {

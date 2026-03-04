@@ -496,6 +496,25 @@
                     <div class="info-row"><span class="label">Altitude</span><span class="value">${(data.altitudeKm || 0).toFixed(1)} km</span></div>
                     <div class="info-row"><span class="label">Velocity</span><span class="value">${(data.velocityKmS || 0).toFixed(2)} km/s</span></div>
                 `;
+                if (data.intlDesignator) {
+                    html += `<div class="info-row"><span class="label">Intl Designator</span><span class="value">${data.intlDesignator}</span></div>`;
+                }
+                if (data.inclinationDeg != null) {
+                    html += `<div class="info-row"><span class="label">Inclination</span><span class="value">${data.inclinationDeg}&deg;</span></div>`;
+                }
+                if (data.periodMinutes != null) {
+                    html += `<div class="info-row"><span class="label">Orbital Period</span><span class="value">${data.periodMinutes.toFixed(1)} min</span></div>`;
+                }
+                if (data.apogeeKm != null && data.perigeeKm != null) {
+                    html += `<div class="info-row"><span class="label">Apogee</span><span class="value">${data.apogeeKm.toFixed(1)} km</span></div>`;
+                    html += `<div class="info-row"><span class="label">Perigee</span><span class="value">${data.perigeeKm.toFixed(1)} km</span></div>`;
+                }
+                if (data.eccentricityValue != null) {
+                    html += `<div class="info-row"><span class="label">Eccentricity</span><span class="value">${data.eccentricityValue}</span></div>`;
+                }
+                if (data.epochAge) {
+                    html += `<div class="info-row"><span class="label">TLE Age</span><span class="value">${data.epochAge}</span></div>`;
+                }
                 if (data.sensor) {
                     html += `<div class="info-row"><span class="label">Sensor</span><span class="value">${data.sensor}</span></div>`;
                 }
@@ -506,18 +525,47 @@
                 break;
 
             case 'flight':
+                const EMITTER_CATEGORIES = {
+                    0: 'No info', 1: 'No ADS-B emitter info', 2: 'Light (< 15,500 lbs)',
+                    3: 'Small (15,500\u201375,000 lbs)', 4: 'Large (75,000\u2013300,000 lbs)',
+                    5: 'High Vortex Large', 6: 'Heavy (> 300,000 lbs)',
+                    7: 'High Performance (> 5g)', 8: 'Rotorcraft',
+                    9: 'Glider / Sailplane', 10: 'Lighter-than-air',
+                    11: 'Parachutist / Skydiver', 12: 'Ultralight / Hang-glider',
+                    14: 'UAV / Drone', 15: 'Space Vehicle',
+                    17: 'Surface Emergency Vehicle', 18: 'Surface Service Vehicle'
+                };
+                const acType = data.emitterCategory != null ? (EMITTER_CATEGORIES[data.emitterCategory] || `Category ${data.emitterCategory}`) : '—';
+
+                const vrMs = data.verticalRate;
+                let vrDisplay = '—';
+                if (vrMs != null) {
+                    const vrFpm = (vrMs * 196.85).toFixed(0);
+                    vrDisplay = vrMs > 0 ? `+${vrFpm} ft/min` : `${vrFpm} ft/min`;
+                }
+
+                let squawkDisplay = data.squawk || '—';
+                if (data.squawk === '7500') squawkDisplay = '7500 (HIJACK)';
+                else if (data.squawk === '7600') squawkDisplay = '7600 (RADIO FAIL)';
+                else if (data.squawk === '7700') squawkDisplay = '7700 (EMERGENCY)';
+
                 title.textContent = data.callsign || data.icao24 || 'Unknown Flight';
                 html = `
                     <div class="info-row"><span class="label">ICAO24</span><span class="value">${data.icao24}</span></div>
                     <div class="info-row"><span class="label">Callsign</span><span class="value">${data.callsign || '—'}</span></div>
+                    <div class="info-row"><span class="label">Aircraft Type</span><span class="value">${acType}</span></div>
                     <div class="info-row"><span class="label">Category</span><span class="value">${data.category || 'Unknown'}</span></div>
+                    <div class="info-row"><span class="label">Origin</span><span class="value">${data.originCountry || '—'}</span></div>
                     <div class="info-row"><span class="label">Latitude</span><span class="value">${(data.latitude || 0).toFixed(4)}&deg;</span></div>
                     <div class="info-row"><span class="label">Longitude</span><span class="value">${(data.longitude || 0).toFixed(4)}&deg;</span></div>
                     <div class="info-row"><span class="label">Altitude</span><span class="value">${((data.altitudeM || 0) * 3.281).toFixed(0)} ft (${((data.altitudeM || 0) / 1000).toFixed(1)} km)</span></div>
                     <div class="info-row"><span class="label">Speed</span><span class="value">${((data.velocityMs || 0) * 1.944).toFixed(0)} kts</span></div>
                     <div class="info-row"><span class="label">Heading</span><span class="value">${(data.heading || 0).toFixed(0)}&deg;</span></div>
+                    <div class="info-row"><span class="label">Vertical Rate</span><span class="value">${vrDisplay}</span></div>
+                    <div class="info-row"><span class="label">Squawk</span><span class="value">${squawkDisplay}</span></div>
                     <div class="info-row"><span class="label">On Ground</span><span class="value">${data.onGround ? 'Yes' : 'No'}</span></div>
                 `;
+                html += `<button class="btn btn-lookup" style="margin-top: 8px; width: 100%;" onclick="window.skywatch.lookupAircraft('${data.icao24}')">Lookup Aircraft Details</button>`;
                 break;
 
             case 'ship':
@@ -560,9 +608,34 @@
                     <div class="info-row"><span class="label">Type</span><span class="value">${data.type}</span></div>
                     <div class="info-row"><span class="label">Floor</span><span class="value">${data.floor.toLocaleString()} ft</span></div>
                     <div class="info-row"><span class="label">Ceiling</span><span class="value">${data.ceiling >= 99999 ? 'Unlimited' : data.ceiling.toLocaleString() + ' ft'}</span></div>
-                    <div class="info-row"><span class="label">Radius</span><span class="value">${data.radiusKm} km</span></div>
-                    <div class="info-row"><span class="label">Center</span><span class="value">${data.center[1].toFixed(4)}&deg;, ${data.center[0].toFixed(4)}&deg;</span></div>
                 `;
+                if (data.radiusKm && data.radiusKm !== '—') {
+                    html += `<div class="info-row"><span class="label">Radius</span><span class="value">${data.radiusKm} km</span></div>`;
+                }
+                html += `<div class="info-row"><span class="label">Center</span><span class="value">${data.center[1].toFixed(4)}&deg;, ${data.center[0].toFixed(4)}&deg;</span></div>`;
+
+                // Show all additional FAA properties
+                if (data.details && typeof data.details === 'object') {
+                    const FAA_LABELS = {
+                        'IDENT': 'Identifier', 'LOCAL_TYPE': 'Local Type',
+                        'LOWER_UOM': 'Floor Units', 'UPPER_UOM': 'Ceiling Units',
+                        'EFFECTIVE_DATE': 'Effective', 'EXPIRATION_DATE': 'Expires',
+                        'SCHEDULE': 'Schedule', 'CITY': 'City', 'STATE': 'State',
+                        'COUNTRY': 'Country', 'AGENCY': 'Agency',
+                        'CONTROLLING_AGENCY': 'Controlling Agency',
+                        'SECTOR': 'Sector', 'REASON': 'Reason',
+                        'NOTAM_ID': 'NOTAM', 'OBJECTID': null,
+                        'NAME': null, 'TYPE_CODE': null,
+                        'LOWER_VAL': null, 'UPPER_VAL': null,
+                        'lower_val': null, 'upper_val': null,
+                        'name': null, 'ident': null, 'type_code': null
+                    };
+                    for (const [key, val] of Object.entries(data.details)) {
+                        if (FAA_LABELS[key] === null) continue; // already shown above
+                        const label = FAA_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        html += `<div class="info-row"><span class="label">${label}</span><span class="value">${val}</span></div>`;
+                    }
+                }
                 break;
 
             default:
@@ -605,6 +678,31 @@
                 clampToGround: true
             }
         });
+    };
+
+    window.skywatch.lookupAircraft = async function (icao24) {
+        const body = document.getElementById('popup-body');
+        const existingBtn = body.querySelector('.btn-lookup');
+        if (existingBtn) existingBtn.textContent = 'Looking up...';
+
+        const meta = await fetchJson(`/api/flights/${icao24}/metadata`);
+        if (!meta) {
+            if (existingBtn) existingBtn.textContent = 'No data found';
+            return;
+        }
+
+        let metaHtml = '<div style="border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px;">';
+        metaHtml += '<div class="info-row"><span class="label" style="font-weight: bold;">Aircraft Details</span><span class="value"></span></div>';
+        if (meta.manufacturer) metaHtml += `<div class="info-row"><span class="label">Manufacturer</span><span class="value">${meta.manufacturer}</span></div>`;
+        if (meta.model) metaHtml += `<div class="info-row"><span class="label">Model</span><span class="value">${meta.model}</span></div>`;
+        if (meta.typeCode) metaHtml += `<div class="info-row"><span class="label">Type Code</span><span class="value">${meta.typeCode}</span></div>`;
+        if (meta.registration) metaHtml += `<div class="info-row"><span class="label">Registration</span><span class="value">${meta.registration}</span></div>`;
+        if (meta.operator) metaHtml += `<div class="info-row"><span class="label">Operator</span><span class="value">${meta.operator}</span></div>`;
+        if (meta.owner) metaHtml += `<div class="info-row"><span class="label">Owner</span><span class="value">${meta.owner}</span></div>`;
+        metaHtml += '</div>';
+
+        if (existingBtn) existingBtn.remove();
+        body.insertAdjacentHTML('beforeend', metaHtml);
     };
 
     // ===== Region of Interest =====
@@ -831,6 +929,70 @@
         }));
     })();
 
+    // ===== Data Capture Toggle =====
+    const captureToggle = document.getElementById('toggle-capture');
+    const captureStatus = document.getElementById('capture-status');
+    const captureDownload = document.getElementById('btn-capture-download');
+    const captureClear = document.getElementById('btn-capture-clear');
+
+    captureToggle.addEventListener('change', async function () {
+        const enabled = this.checked;
+        await fetch('/api/capture/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+        captureDownload.style.display = enabled ? 'block' : 'none';
+        captureClear.style.display = enabled ? 'block' : 'none';
+        captureStatus.style.display = enabled ? 'block' : 'none';
+        if (enabled) {
+            captureStatus.textContent = 'Recording data streams...';
+            refreshCaptureStatus();
+        } else {
+            captureStatus.textContent = 'Capture stopped.';
+        }
+    });
+
+    async function refreshCaptureStatus() {
+        if (!captureToggle.checked) return;
+        try {
+            const status = await fetchJson('/api/capture/status');
+            if (status && status.files) {
+                const entries = Object.entries(status.files);
+                if (entries.length > 0) {
+                    const parts = entries.map(([name, info]) => {
+                        const sizeKb = (info.sizeBytes / 1024).toFixed(1);
+                        return `${name}: ${sizeKb} KB`;
+                    });
+                    captureStatus.textContent = parts.join(' | ');
+                }
+            }
+        } catch { /* ignore */ }
+    }
+
+    // Refresh capture file sizes periodically
+    setInterval(refreshCaptureStatus, 15000);
+
+    captureDownload.addEventListener('click', async function () {
+        const status = await fetchJson('/api/capture/status');
+        if (!status || !status.files) return;
+        for (const streamName of Object.keys(status.files)) {
+            const a = document.createElement('a');
+            a.href = `/api/capture/download/${streamName}`;
+            a.download = `${streamName}.jsonl`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    });
+
+    captureClear.addEventListener('click', async function () {
+        if (!confirm('Clear all captured log files?')) return;
+        await fetch('/api/capture/clear', { method: 'DELETE' });
+        captureStatus.textContent = 'Logs cleared.';
+        refreshCaptureStatus();
+    });
+
     // ===== Time Controls =====
     const timeScrubber = document.getElementById('time-scrubber');
     const timeDisplay = document.getElementById('time-display');
@@ -981,7 +1143,15 @@
         const floor = p.LOWER_VAL || p.lower_val || p.FLOOR || 0;
         const ceiling = p.UPPER_VAL || p.upper_val || p.CEILING || 99999;
 
-        return { name, type, color, floor: Number(floor), ceiling: Number(ceiling), geometry: feature.geometry };
+        // Pass through all FAA properties for detailed popup
+        const details = {};
+        for (const [key, val] of Object.entries(p)) {
+            if (val != null && val !== '' && key !== 'SHAPE' && key !== 'Shape') {
+                details[key] = val;
+            }
+        }
+
+        return { name, type, color, floor: Number(floor), ceiling: Number(ceiling), geometry: feature.geometry, details };
     }
 
     async function renderNoFlyZones() {
@@ -1046,7 +1216,7 @@
                         position: pi === 0 ? Cesium.Cartesian3.fromDegrees(ring[0][0], ring[0][1]) : undefined,
                         properties: {
                             type: 'noflyzone',
-                            data: { id: zone.name, name: zone.name, type: zone.type, floor: zone.floor, ceiling: zone.ceiling, center: [ring[0][0], ring[0][1]], radiusKm: '—' }
+                            data: { id: zone.name, name: zone.name, type: zone.type, floor: zone.floor, ceiling: zone.ceiling, center: [ring[0][0], ring[0][1]], radiusKm: '—', details: zone.details || {} }
                         }
                     });
 
