@@ -468,10 +468,6 @@ html, body {
 
 /* ===== Base Layer Picker ===== */
 #base-layer-picker {
-    position: fixed;
-    bottom: 80px;
-    left: 16px;
-    z-index: 999;
 }
 
 #base-layer-picker select {
