@@ -18,6 +18,7 @@ Before deploying, set the API keys and credentials in your hosting environment. 
 | `OpenSkyUsername` / `OpenSkyPassword` | OpenSky Network credentials (higher rate limits) | Optional |
 | `AisHubApiKey` | AISHub API key for ship AIS data | Optional |
 | `UsgsM2MUsername` / `UsgsM2MPassword` | USGS M2M API for Landsat imagery feeds | Optional |
+| *(Copernicus)* | Sentinel imagery catalogue — **no key needed** (public API) | N/A |
 
 These can be set using any of the methods below. They are listed in priority order — a value set via a higher-priority method overrides lower ones.
 
@@ -79,6 +80,7 @@ Secrets are stored in `~/.microsoft/usersecrets/<user-secrets-id>/secrets.json` 
 | `OpenSkyUsername` / `OpenSkyPassword` | https://opensky-network.org/register | Free; gives higher API rate limits |
 | `AisHubApiKey` | https://www.aishub.net/join | Requires sharing an AIS receiver or a fee |
 | `UsgsM2MUsername` / `UsgsM2MPassword` | https://ers.cr.usgs.gov/register | Free USGS EarthExplorer account |
+| Copernicus Dataspace | https://dataspace.copernicus.eu | **No key required** for the catalogue OData API (`catalogue.dataspace.copernicus.eu/odata/v1`). It provides free, unauthenticated access to Sentinel-1/2/3/5P scene metadata, quicklook thumbnails, and GeoJSON footprints. If you want to download full-resolution products, register for a free account at the URL above. |
 
 ---
 

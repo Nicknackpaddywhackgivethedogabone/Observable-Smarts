@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -27,7 +28,8 @@ public class AirspaceController : ControllerBase
     }
 
     /// <summary>
-    /// Returns FAA Special Use Airspace data as passthrough GeoJSON.
+    /// Returns FAA Special Use Airspace data as a merged GeoJSON FeatureCollection.
+    /// Combines both Prohibited and Restricted area datasets.
     /// Falls back to an empty collection on failure.
     /// </summary>
     [HttpGet("sua")]
@@ -45,25 +47,46 @@ public class AirspaceController : ControllerBase
     private async Task<string?> FetchFaaAirspace()
     {
         var client = _httpClientFactory.CreateClient("Celestrak"); // reuse a client with timeout
-        var features = new List<string>();
+        var allFeatures = new List<JsonElement>();
 
         foreach (var url in new[] { FaaProhibitedUrl, FaaRestrictedUrl })
         {
             try
             {
                 var json = await client.GetStringAsync(url);
-                features.Add(json);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("features", out var features) &&
+                    features.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var feature in features.EnumerateArray())
+                    {
+                        allFeatures.Add(feature.Clone());
+                    }
+                }
             }
             catch (Exception ex)
             {
-                // Log but continue — partial data is better than none
                 Console.WriteLine($"[Airspace] Failed to fetch {url}: {ex.Message}");
             }
         }
 
-        if (features.Count == 0) return null;
+        if (allFeatures.Count == 0) return null;
 
-        // Return the first successful response (could merge in the future)
-        return features[0];
+        // Merge into a single FeatureCollection
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "FeatureCollection");
+            writer.WriteStartArray("features");
+            foreach (var feature in allFeatures)
+            {
+                feature.WriteTo(writer);
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
     }
 }

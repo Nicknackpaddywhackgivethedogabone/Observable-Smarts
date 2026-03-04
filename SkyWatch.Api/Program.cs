@@ -54,9 +54,20 @@ builder.Services.AddHttpClient("USGS", c =>
     c.Timeout = TimeSpan.FromSeconds(30);
     c.DefaultRequestHeaders.UserAgent.ParseAdd("ObservableSmarts/1.0");
 });
+builder.Services.AddHttpClient("NasaCMR", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(30);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("ObservableSmarts/1.0");
+});
 
 // API status tracking (singleton — shared across all scoped services)
 builder.Services.AddSingleton<ApiStatusService>();
+
+// Data capture logging (singleton — toggled via web UI)
+builder.Services.AddSingleton<DataCaptureService>();
+
+// Worker toggle (singleton — controls on-demand data loading)
+builder.Services.AddSingleton<WorkerToggleService>();
 
 // Application services
 builder.Services.AddScoped<TleService>();

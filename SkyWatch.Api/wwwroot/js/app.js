@@ -69,7 +69,7 @@
     const state = {
         satellites: { enabled: true, filter: 'all', data: [] },
         swaths: { enabled: true, data: [] },
-        imagery: { enabled: false, data: [] },
+        imagery: { enabled: false, sourceFilter: 'all', sensorFilter: 'all', data: [] },
         flights: { enabled: false, filter: 'all', data: [] },
         ships: { enabled: false, filter: 'all', data: [] },
         isLive: true,
@@ -175,8 +175,7 @@
                     color: color,
                     outlineColor: Cesium.Color.WHITE.withAlpha(0.3),
                     outlineWidth: 1,
-                    scaleByDistance: new Cesium.NearFarScalar(1e6, 1.5, 1e8, 0.5),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    scaleByDistance: new Cesium.NearFarScalar(1e6, 1.5, 1e8, 0.5)
                 },
                 properties: {
                     type: 'satellite',
@@ -215,8 +214,7 @@
                     pixelSize: 10,
                     color: Cesium.Color.fromCssColorString('#10b981'),
                     outlineColor: Cesium.Color.WHITE,
-                    outlineWidth: 2,
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    outlineWidth: 2
                 },
                 label: {
                     text: sat.name,
@@ -227,8 +225,7 @@
                     style: Cesium.LabelStyle.FILL_AND_OUTLINE,
                     verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
                     pixelOffset: new Cesium.Cartesian2(0, -14),
-                    scaleByDistance: new Cesium.NearFarScalar(1e6, 1, 5e7, 0.3),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    scaleByDistance: new Cesium.NearFarScalar(1e6, 1, 5e7, 0.3)
                 },
                 properties: {
                     type: 'imaging-satellite',
@@ -274,8 +271,18 @@
     function renderImagery(data) {
         imageryEntities.entities.removeAll();
 
-        for (let i = 0; i < data.length; i++) {
-            const scene = data[i];
+        // Apply source filter
+        let filtered = data;
+        if (state.imagery.sourceFilter !== 'all') {
+            filtered = filtered.filter(s => s.source === state.imagery.sourceFilter);
+        }
+        // Apply sensor filter
+        if (state.imagery.sensorFilter !== 'all') {
+            filtered = filtered.filter(s => s.sensor && s.sensor.indexOf(state.imagery.sensorFilter) !== -1);
+        }
+
+        for (let i = 0; i < filtered.length; i++) {
+            const scene = filtered[i];
             if (!scene.footprint || !scene.footprint.coordinates || scene.footprint.coordinates.length === 0) continue;
 
             const ring = scene.footprint.coordinates[0];
@@ -346,8 +353,7 @@
                     color: color,
                     outlineColor: Cesium.Color.WHITE.withAlpha(0.2),
                     outlineWidth: 1,
-                    scaleByDistance: new Cesium.NearFarScalar(1e5, 2, 1e7, 0.5),
-                    disableDepthTestDistance: Number.POSITIVE_INFINITY
+                    scaleByDistance: new Cesium.NearFarScalar(1e5, 2, 1e7, 0.5)
                 },
                 properties: {
                     type: 'flight',
@@ -490,6 +496,25 @@
                     <div class="info-row"><span class="label">Altitude</span><span class="value">${(data.altitudeKm || 0).toFixed(1)} km</span></div>
                     <div class="info-row"><span class="label">Velocity</span><span class="value">${(data.velocityKmS || 0).toFixed(2)} km/s</span></div>
                 `;
+                if (data.intlDesignator) {
+                    html += `<div class="info-row"><span class="label">Intl Designator</span><span class="value">${data.intlDesignator}</span></div>`;
+                }
+                if (data.inclinationDeg != null) {
+                    html += `<div class="info-row"><span class="label">Inclination</span><span class="value">${data.inclinationDeg}&deg;</span></div>`;
+                }
+                if (data.periodMinutes != null) {
+                    html += `<div class="info-row"><span class="label">Orbital Period</span><span class="value">${data.periodMinutes.toFixed(1)} min</span></div>`;
+                }
+                if (data.apogeeKm != null && data.perigeeKm != null) {
+                    html += `<div class="info-row"><span class="label">Apogee</span><span class="value">${data.apogeeKm.toFixed(1)} km</span></div>`;
+                    html += `<div class="info-row"><span class="label">Perigee</span><span class="value">${data.perigeeKm.toFixed(1)} km</span></div>`;
+                }
+                if (data.eccentricityValue != null) {
+                    html += `<div class="info-row"><span class="label">Eccentricity</span><span class="value">${data.eccentricityValue}</span></div>`;
+                }
+                if (data.epochAge) {
+                    html += `<div class="info-row"><span class="label">TLE Age</span><span class="value">${data.epochAge}</span></div>`;
+                }
                 if (data.sensor) {
                     html += `<div class="info-row"><span class="label">Sensor</span><span class="value">${data.sensor}</span></div>`;
                 }
@@ -500,18 +525,47 @@
                 break;
 
             case 'flight':
+                const EMITTER_CATEGORIES = {
+                    0: 'No info', 1: 'No ADS-B emitter info', 2: 'Light (< 15,500 lbs)',
+                    3: 'Small (15,500\u201375,000 lbs)', 4: 'Large (75,000\u2013300,000 lbs)',
+                    5: 'High Vortex Large', 6: 'Heavy (> 300,000 lbs)',
+                    7: 'High Performance (> 5g)', 8: 'Rotorcraft',
+                    9: 'Glider / Sailplane', 10: 'Lighter-than-air',
+                    11: 'Parachutist / Skydiver', 12: 'Ultralight / Hang-glider',
+                    14: 'UAV / Drone', 15: 'Space Vehicle',
+                    17: 'Surface Emergency Vehicle', 18: 'Surface Service Vehicle'
+                };
+                const acType = data.emitterCategory != null ? (EMITTER_CATEGORIES[data.emitterCategory] || `Category ${data.emitterCategory}`) : '—';
+
+                const vrMs = data.verticalRate;
+                let vrDisplay = '—';
+                if (vrMs != null) {
+                    const vrFpm = (vrMs * 196.85).toFixed(0);
+                    vrDisplay = vrMs > 0 ? `+${vrFpm} ft/min` : `${vrFpm} ft/min`;
+                }
+
+                let squawkDisplay = data.squawk || '—';
+                if (data.squawk === '7500') squawkDisplay = '7500 (HIJACK)';
+                else if (data.squawk === '7600') squawkDisplay = '7600 (RADIO FAIL)';
+                else if (data.squawk === '7700') squawkDisplay = '7700 (EMERGENCY)';
+
                 title.textContent = data.callsign || data.icao24 || 'Unknown Flight';
                 html = `
                     <div class="info-row"><span class="label">ICAO24</span><span class="value">${data.icao24}</span></div>
                     <div class="info-row"><span class="label">Callsign</span><span class="value">${data.callsign || '—'}</span></div>
+                    <div class="info-row"><span class="label">Aircraft Type</span><span class="value">${acType}</span></div>
                     <div class="info-row"><span class="label">Category</span><span class="value">${data.category || 'Unknown'}</span></div>
+                    <div class="info-row"><span class="label">Origin</span><span class="value">${data.originCountry || '—'}</span></div>
                     <div class="info-row"><span class="label">Latitude</span><span class="value">${(data.latitude || 0).toFixed(4)}&deg;</span></div>
                     <div class="info-row"><span class="label">Longitude</span><span class="value">${(data.longitude || 0).toFixed(4)}&deg;</span></div>
                     <div class="info-row"><span class="label">Altitude</span><span class="value">${((data.altitudeM || 0) * 3.281).toFixed(0)} ft (${((data.altitudeM || 0) / 1000).toFixed(1)} km)</span></div>
                     <div class="info-row"><span class="label">Speed</span><span class="value">${((data.velocityMs || 0) * 1.944).toFixed(0)} kts</span></div>
                     <div class="info-row"><span class="label">Heading</span><span class="value">${(data.heading || 0).toFixed(0)}&deg;</span></div>
+                    <div class="info-row"><span class="label">Vertical Rate</span><span class="value">${vrDisplay}</span></div>
+                    <div class="info-row"><span class="label">Squawk</span><span class="value">${squawkDisplay}</span></div>
                     <div class="info-row"><span class="label">On Ground</span><span class="value">${data.onGround ? 'Yes' : 'No'}</span></div>
                 `;
+                html += `<button class="btn btn-lookup" style="margin-top: 8px; width: 100%;" onclick="window.skywatch.lookupAircraft('${data.icao24}')">Lookup Aircraft Details</button>`;
                 break;
 
             case 'ship':
@@ -554,9 +608,34 @@
                     <div class="info-row"><span class="label">Type</span><span class="value">${data.type}</span></div>
                     <div class="info-row"><span class="label">Floor</span><span class="value">${data.floor.toLocaleString()} ft</span></div>
                     <div class="info-row"><span class="label">Ceiling</span><span class="value">${data.ceiling >= 99999 ? 'Unlimited' : data.ceiling.toLocaleString() + ' ft'}</span></div>
-                    <div class="info-row"><span class="label">Radius</span><span class="value">${data.radiusKm} km</span></div>
-                    <div class="info-row"><span class="label">Center</span><span class="value">${data.center[1].toFixed(4)}&deg;, ${data.center[0].toFixed(4)}&deg;</span></div>
                 `;
+                if (data.radiusKm && data.radiusKm !== '—') {
+                    html += `<div class="info-row"><span class="label">Radius</span><span class="value">${data.radiusKm} km</span></div>`;
+                }
+                html += `<div class="info-row"><span class="label">Center</span><span class="value">${data.center[1].toFixed(4)}&deg;, ${data.center[0].toFixed(4)}&deg;</span></div>`;
+
+                // Show all additional FAA properties
+                if (data.details && typeof data.details === 'object') {
+                    const FAA_LABELS = {
+                        'IDENT': 'Identifier', 'LOCAL_TYPE': 'Local Type',
+                        'LOWER_UOM': 'Floor Units', 'UPPER_UOM': 'Ceiling Units',
+                        'EFFECTIVE_DATE': 'Effective', 'EXPIRATION_DATE': 'Expires',
+                        'SCHEDULE': 'Schedule', 'CITY': 'City', 'STATE': 'State',
+                        'COUNTRY': 'Country', 'AGENCY': 'Agency',
+                        'CONTROLLING_AGENCY': 'Controlling Agency',
+                        'SECTOR': 'Sector', 'REASON': 'Reason',
+                        'NOTAM_ID': 'NOTAM', 'OBJECTID': null,
+                        'NAME': null, 'TYPE_CODE': null,
+                        'LOWER_VAL': null, 'UPPER_VAL': null,
+                        'lower_val': null, 'upper_val': null,
+                        'name': null, 'ident': null, 'type_code': null
+                    };
+                    for (const [key, val] of Object.entries(data.details)) {
+                        if (FAA_LABELS[key] === null) continue; // already shown above
+                        const label = FAA_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        html += `<div class="info-row"><span class="label">${label}</span><span class="value">${val}</span></div>`;
+                    }
+                }
                 break;
 
             default:
@@ -599,6 +678,31 @@
                 clampToGround: true
             }
         });
+    };
+
+    window.skywatch.lookupAircraft = async function (icao24) {
+        const body = document.getElementById('popup-body');
+        const existingBtn = body.querySelector('.btn-lookup');
+        if (existingBtn) existingBtn.textContent = 'Looking up...';
+
+        const meta = await fetchJson(`/api/flights/${icao24}/metadata`);
+        if (!meta) {
+            if (existingBtn) existingBtn.textContent = 'No data found';
+            return;
+        }
+
+        let metaHtml = '<div style="border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px;">';
+        metaHtml += '<div class="info-row"><span class="label" style="font-weight: bold;">Aircraft Details</span><span class="value"></span></div>';
+        if (meta.manufacturer) metaHtml += `<div class="info-row"><span class="label">Manufacturer</span><span class="value">${meta.manufacturer}</span></div>`;
+        if (meta.model) metaHtml += `<div class="info-row"><span class="label">Model</span><span class="value">${meta.model}</span></div>`;
+        if (meta.typeCode) metaHtml += `<div class="info-row"><span class="label">Type Code</span><span class="value">${meta.typeCode}</span></div>`;
+        if (meta.registration) metaHtml += `<div class="info-row"><span class="label">Registration</span><span class="value">${meta.registration}</span></div>`;
+        if (meta.operator) metaHtml += `<div class="info-row"><span class="label">Operator</span><span class="value">${meta.operator}</span></div>`;
+        if (meta.owner) metaHtml += `<div class="info-row"><span class="label">Owner</span><span class="value">${meta.owner}</span></div>`;
+        metaHtml += '</div>';
+
+        if (existingBtn) existingBtn.remove();
+        body.insertAdjacentHTML('beforeend', metaHtml);
     };
 
     // ===== Region of Interest =====
@@ -702,35 +806,83 @@
         document.getElementById('roi-results').innerHTML = html;
     });
 
-    // ===== Layer Toggles =====
+    // ===== On-Demand Layer Toggles =====
+    // Track interval IDs so we can stop polling when toggled off
+    const refreshIntervals = {};
+
+    async function enableStream(stream) {
+        try { await fetch(`/api/workers/${stream}/enable`, { method: 'POST' }); } catch (e) { console.warn('Failed to enable worker:', e); }
+    }
+    async function disableStream(stream) {
+        try { await fetch(`/api/workers/${stream}/disable`, { method: 'POST' }); } catch (e) { console.warn('Failed to disable worker:', e); }
+    }
+
     document.getElementById('toggle-satellites').addEventListener('change', function () {
         state.satellites.enabled = this.checked;
         satelliteEntities.show = this.checked;
-        if (this.checked) refreshSatellites();
+        if (this.checked) {
+            enableStream('satellites');
+            refreshSatellites();
+            refreshIntervals.satellites = setInterval(refreshSatellites, REFRESH_INTERVALS.satellites);
+        } else {
+            disableStream('satellites');
+            clearInterval(refreshIntervals.satellites);
+            satelliteEntities.entities.removeAll();
+        }
     });
 
     document.getElementById('toggle-swaths').addEventListener('change', function () {
         state.swaths.enabled = this.checked;
         swathEntities.show = this.checked;
-        if (this.checked) refreshSwaths();
+        if (this.checked) {
+            refreshSwaths();
+            refreshIntervals.swaths = setInterval(refreshSwaths, REFRESH_INTERVALS.swaths);
+        } else {
+            clearInterval(refreshIntervals.swaths);
+            swathEntities.entities.removeAll();
+        }
     });
 
     document.getElementById('toggle-imagery').addEventListener('change', function () {
         state.imagery.enabled = this.checked;
         imageryEntities.show = this.checked;
-        if (this.checked) refreshImagery();
+        if (this.checked) {
+            enableStream('imagery');
+            refreshImagery();
+            refreshIntervals.imagery = setInterval(refreshImagery, REFRESH_INTERVALS.imagery);
+        } else {
+            disableStream('imagery');
+            clearInterval(refreshIntervals.imagery);
+            imageryEntities.entities.removeAll();
+        }
     });
 
     document.getElementById('toggle-flights').addEventListener('change', function () {
         state.flights.enabled = this.checked;
         flightEntities.show = this.checked;
-        if (this.checked) refreshFlights();
+        if (this.checked) {
+            enableStream('flights');
+            refreshFlights();
+            refreshIntervals.flights = setInterval(refreshFlights, REFRESH_INTERVALS.flights);
+        } else {
+            disableStream('flights');
+            clearInterval(refreshIntervals.flights);
+            flightEntities.entities.removeAll();
+        }
     });
 
     document.getElementById('toggle-ships').addEventListener('change', function () {
         state.ships.enabled = this.checked;
         shipEntities.show = this.checked;
-        if (this.checked) refreshShips();
+        if (this.checked) {
+            enableStream('ships');
+            refreshShips();
+            refreshIntervals.ships = setInterval(refreshShips, REFRESH_INTERVALS.ships);
+        } else {
+            disableStream('ships');
+            clearInterval(refreshIntervals.ships);
+            shipEntities.entities.removeAll();
+        }
     });
 
     // Satellite category filter
@@ -756,6 +908,50 @@
             if (state.ships.data.length > 0) renderShips(state.ships.data);
         });
     });
+
+    // Imagery source filter
+    document.querySelectorAll('input[name="imagery-source"]').forEach(radio => {
+        radio.addEventListener('change', function () {
+            state.imagery.sourceFilter = this.value;
+            if (state.imagery.data.length > 0) renderImagery(state.imagery.data);
+        });
+    });
+
+    // Imagery sensor filter
+    document.querySelectorAll('input[name="imagery-sensor"]').forEach(radio => {
+        radio.addEventListener('change', function () {
+            state.imagery.sensorFilter = this.value;
+            if (state.imagery.data.length > 0) renderImagery(state.imagery.data);
+        });
+    });
+
+    // ===== Per-Source Imagery Refresh =====
+    function setupSourceRefresh(btnId, source) {
+        document.getElementById(btnId).addEventListener('click', async function () {
+            const statusEl = document.getElementById('imagery-refresh-status');
+            const originalText = this.textContent;
+            this.disabled = true;
+            this.textContent = '...';
+            statusEl.textContent = '';
+
+            try {
+                const resp = await fetch(`/api/imagery/refresh/${source}`, { method: 'POST' });
+                const result = await resp.json();
+                statusEl.textContent = `${result.source}: ${result.sceneCount} scenes (total: ${result.totalScenes})`;
+                if (state.imagery.enabled) {
+                    await refreshImagery();
+                }
+            } catch (err) {
+                statusEl.textContent = `${source} refresh failed: ${err.message}`;
+            }
+
+            this.disabled = false;
+            this.textContent = originalText;
+        });
+    }
+    setupSourceRefresh('btn-refresh-copernicus', 'copernicus');
+    setupSourceRefresh('btn-refresh-usgs', 'usgs');
+    setupSourceRefresh('btn-refresh-nasa', 'nasa');
 
     // ===== Sidebar Toggle (Mobile) =====
     document.getElementById('sidebar-toggle').addEventListener('click', function () {
@@ -808,6 +1004,70 @@
             credit: 'CartoDB Dark Matter'
         }));
     })();
+
+    // ===== Data Capture Toggle =====
+    const captureToggle = document.getElementById('toggle-capture');
+    const captureStatus = document.getElementById('capture-status');
+    const captureDownload = document.getElementById('btn-capture-download');
+    const captureClear = document.getElementById('btn-capture-clear');
+
+    captureToggle.addEventListener('change', async function () {
+        const enabled = this.checked;
+        await fetch('/api/capture/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+        captureDownload.style.display = enabled ? 'block' : 'none';
+        captureClear.style.display = enabled ? 'block' : 'none';
+        captureStatus.style.display = enabled ? 'block' : 'none';
+        if (enabled) {
+            captureStatus.textContent = 'Recording data streams...';
+            refreshCaptureStatus();
+        } else {
+            captureStatus.textContent = 'Capture stopped.';
+        }
+    });
+
+    async function refreshCaptureStatus() {
+        if (!captureToggle.checked) return;
+        try {
+            const status = await fetchJson('/api/capture/status');
+            if (status && status.files) {
+                const entries = Object.entries(status.files);
+                if (entries.length > 0) {
+                    const parts = entries.map(([name, info]) => {
+                        const sizeKb = (info.sizeBytes / 1024).toFixed(1);
+                        return `${name}: ${sizeKb} KB`;
+                    });
+                    captureStatus.textContent = parts.join(' | ');
+                }
+            }
+        } catch { /* ignore */ }
+    }
+
+    // Refresh capture file sizes periodically
+    setInterval(refreshCaptureStatus, 15000);
+
+    captureDownload.addEventListener('click', async function () {
+        const status = await fetchJson('/api/capture/status');
+        if (!status || !status.files) return;
+        for (const streamName of Object.keys(status.files)) {
+            const a = document.createElement('a');
+            a.href = `/api/capture/download/${streamName}`;
+            a.download = `${streamName}.jsonl`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    });
+
+    captureClear.addEventListener('click', async function () {
+        if (!confirm('Clear all captured log files?')) return;
+        await fetch('/api/capture/clear', { method: 'DELETE' });
+        captureStatus.textContent = 'Logs cleared.';
+        refreshCaptureStatus();
+    });
 
     // ===== Time Controls =====
     const timeScrubber = document.getElementById('time-scrubber');
@@ -927,38 +1187,8 @@
 
     const nfzState = { enabled: false, filter: 'all', data: [] };
 
-    // FAA Special Use Airspace data (static dataset of well-known US restricted/prohibited areas)
-    const STATIC_AIRSPACE = [
-        // Prohibited Areas
-        { id: 'P-56A', name: 'P-56A — White House', type: 'Prohibited', center: [-77.0365, 38.8977], radiusKm: 1.3, floor: 0, ceiling: 18000, color: '#ef4444' },
-        { id: 'P-56B', name: 'P-56B — Naval Observatory', type: 'Prohibited', center: [-77.0700, 38.9177], radiusKm: 1.3, floor: 0, ceiling: 18000, color: '#ef4444' },
-        { id: 'P-49', name: 'P-49 — Camp David', type: 'Prohibited', center: [-77.4630, 39.6480], radiusKm: 5.6, floor: 0, ceiling: 99999, color: '#ef4444' },
-        { id: 'P-40', name: 'P-40 — Cape Canaveral', type: 'Prohibited', center: [-80.6041, 28.3922], radiusKm: 18, floor: 0, ceiling: 99999, color: '#ef4444' },
-        { id: 'P-204', name: 'P-204 — Pantex Nuclear Facility', type: 'Prohibited', center: [-101.9540, 35.3170], radiusKm: 7.4, floor: 0, ceiling: 15000, color: '#ef4444' },
-        { id: 'P-205', name: 'P-205 — Amarillo, TX', type: 'Prohibited', center: [-101.8410, 35.1830], radiusKm: 5.6, floor: 0, ceiling: 12500, color: '#ef4444' },
-        { id: 'P-67', name: 'P-67 — Bush Compound Kennebunkport', type: 'Prohibited', center: [-70.4490, 43.3520], radiusKm: 1.8, floor: 0, ceiling: 3000, color: '#ef4444' },
-
-        // Major Restricted Areas
-        { id: 'R-2508', name: 'R-2508 — Edwards AFB / China Lake', type: 'Restricted', center: [-117.6000, 35.7000], radiusKm: 80, floor: 0, ceiling: 99999, color: '#f97316' },
-        { id: 'R-2301', name: 'R-2301 — White Sands Missile Range', type: 'Restricted', center: [-106.3500, 32.9500], radiusKm: 60, floor: 0, ceiling: 99999, color: '#f97316' },
-        { id: 'R-4808N', name: 'R-4808N — Nellis / Groom Lake (Area 51)', type: 'Restricted', center: [-115.8000, 37.2350], radiusKm: 40, floor: 0, ceiling: 99999, color: '#f97316' },
-        { id: 'R-4809', name: 'R-4809 — Nevada Test Site', type: 'Restricted', center: [-116.0500, 36.8500], radiusKm: 35, floor: 0, ceiling: 99999, color: '#f97316' },
-        { id: 'R-5107', name: 'R-5107 — Fort Bragg', type: 'Restricted', center: [-79.0000, 35.1400], radiusKm: 15, floor: 0, ceiling: 20000, color: '#f97316' },
-        { id: 'R-2206', name: 'R-2206 — Fort Hood', type: 'Restricted', center: [-97.7700, 31.1400], radiusKm: 25, floor: 0, ceiling: 17999, color: '#f97316' },
-        { id: 'R-5601', name: 'R-5601 — Cherry Point MCAS', type: 'Restricted', center: [-76.9300, 34.9100], radiusKm: 18, floor: 0, ceiling: 50000, color: '#f97316' },
-        { id: 'R-6602', name: 'R-6602 — Eglin AFB', type: 'Restricted', center: [-86.5300, 30.4700], radiusKm: 45, floor: 0, ceiling: 99999, color: '#f97316' },
-        { id: 'R-3004', name: 'R-3004 — Aberdeen Proving Ground', type: 'Restricted', center: [-76.1500, 39.4700], radiusKm: 12, floor: 0, ceiling: 25000, color: '#f97316' },
-        { id: 'R-4401', name: 'R-4401 — Camp Atterbury', type: 'Restricted', center: [-86.0200, 39.3500], radiusKm: 10, floor: 0, ceiling: 13000, color: '#f97316' },
-
-        // Military Operations Areas (MOAs)
-        { id: 'MOA-Tombstone', name: 'Tombstone MOA — AZ', type: 'MOA', center: [-110.2000, 31.7000], radiusKm: 50, floor: 200, ceiling: 18000, color: '#f59e0b' },
-        { id: 'MOA-Condor', name: 'Condor MOA — CA', type: 'MOA', center: [-118.3000, 35.4000], radiusKm: 45, floor: 200, ceiling: 18000, color: '#f59e0b' },
-        { id: 'MOA-Juniper', name: 'Juniper MOA — OR', type: 'MOA', center: [-118.5000, 43.5000], radiusKm: 55, floor: 100, ceiling: 18000, color: '#f59e0b' },
-        { id: 'MOA-Bronco', name: 'Bronco MOA — TX', type: 'MOA', center: [-100.5000, 30.2000], radiusKm: 60, floor: 100, ceiling: 18000, color: '#f59e0b' },
-        { id: 'MOA-Hays', name: 'Hays MOA — KS', type: 'MOA', center: [-99.3000, 38.8000], radiusKm: 50, floor: 500, ceiling: 18000, color: '#f59e0b' },
-        { id: 'MOA-Whiskey', name: 'Whiskey MOA — NC', type: 'MOA', center: [-77.5000, 35.5000], radiusKm: 40, floor: 500, ceiling: 18000, color: '#f59e0b' },
-
-        // International Notable Zones
+    // International notable zones (rendered as ellipses — no FAA polygon data for these)
+    const STATIC_INTERNATIONAL_ZONES = [
         { id: 'NFZ-DMZ-KR', name: 'Korean DMZ', type: 'Prohibited', center: [127.5000, 38.0000], radiusKm: 100, floor: 0, ceiling: 99999, color: '#ef4444' },
         { id: 'NFZ-Chernobyl', name: 'Chernobyl Exclusion Zone', type: 'Prohibited', center: [30.0987, 51.3890], radiusKm: 30, floor: 0, ceiling: 99999, color: '#ef4444' },
         { id: 'NFZ-Dimona', name: 'Dimona Nuclear Facility — Israel', type: 'Restricted', center: [35.1470, 31.0020], radiusKm: 25, floor: 0, ceiling: 99999, color: '#f97316' },
@@ -966,21 +1196,136 @@
         { id: 'NFZ-Buckingham', name: 'Buckingham Palace TRA — London', type: 'Restricted', center: [-0.1419, 51.5014], radiusKm: 2.5, floor: 0, ceiling: 2500, color: '#f97316' },
     ];
 
-    function renderNoFlyZones() {
+    // Parse FAA GeoJSON feature into a normalized zone object
+    function parseFaaFeature(feature) {
+        const p = feature.properties || {};
+        // FAA fields: NAME (e.g. "P-56A WASHINGTON, DC"), TYPE_CODE ("P"/"R"), UPPER_VAL, LOWER_VAL
+        const name = p.NAME || p.IDENT || p.name || p.ident || 'Unknown';
+        const typeCode = p.TYPE_CODE || p.type_code || '';
+        let type = 'Restricted';
+        let color = '#f97316';
+        if (typeCode === 'P' || name.startsWith('P-')) {
+            type = 'Prohibited';
+            color = '#ef4444';
+        } else if (typeCode === 'R' || name.startsWith('R-')) {
+            type = 'Restricted';
+            color = '#f97316';
+        } else if (typeCode === 'MOA' || name.indexOf('MOA') !== -1) {
+            type = 'MOA';
+            color = '#f59e0b';
+        }
+
+        // Altitude — FAA uses various field names
+        const floor = p.LOWER_VAL || p.lower_val || p.FLOOR || 0;
+        const ceiling = p.UPPER_VAL || p.upper_val || p.CEILING || 99999;
+
+        // Pass through all FAA properties for detailed popup
+        const details = {};
+        for (const [key, val] of Object.entries(p)) {
+            if (val != null && val !== '' && key !== 'SHAPE' && key !== 'Shape') {
+                details[key] = val;
+            }
+        }
+
+        return { name, type, color, floor: Number(floor), ceiling: Number(ceiling), geometry: feature.geometry, details };
+    }
+
+    async function renderNoFlyZones() {
         nfzEntities.entities.removeAll();
         if (!nfzState.enabled) return;
 
         const filter = nfzState.filter;
-        const zones = filter === 'all'
-            ? STATIC_AIRSPACE
-            : STATIC_AIRSPACE.filter(z => z.type === filter || (filter === 'TFR' && z.type === 'TFR'));
 
-        for (const zone of zones) {
+        // 1. Fetch real FAA polygon data
+        const geojson = await fetchJson('/api/airspace/sua');
+        if (geojson && geojson.features && geojson.features.length > 0) {
+            let faaIdx = 0;
+            for (const feature of geojson.features) {
+                const zone = parseFaaFeature(feature);
+
+                // Apply filter
+                if (filter !== 'all' && zone.type !== filter) continue;
+                if (!zone.geometry || !zone.geometry.coordinates) continue;
+
+                const cesiumColor = Cesium.Color.fromCssColorString(zone.color);
+                const zoneId = 'faa-' + faaIdx++;
+
+                // Handle both Polygon and MultiPolygon
+                const polygons = zone.geometry.type === 'MultiPolygon'
+                    ? zone.geometry.coordinates
+                    : [zone.geometry.coordinates];
+
+                for (let pi = 0; pi < polygons.length; pi++) {
+                    const ring = polygons[pi][0]; // outer ring
+                    if (!ring || ring.length < 3) continue;
+
+                    const positions = [];
+                    for (const coord of ring) {
+                        positions.push(coord[0], coord[1]);
+                    }
+
+                    const entityId = polygons.length > 1 ? zoneId + '-' + pi : zoneId;
+
+                    // Ground polygon
+                    nfzEntities.entities.add({
+                        id: 'nfz-' + entityId,
+                        polygon: {
+                            hierarchy: Cesium.Cartesian3.fromDegreesArray(positions),
+                            material: cesiumColor.withAlpha(0.12),
+                            outline: true,
+                            outlineColor: cesiumColor.withAlpha(0.7),
+                            outlineWidth: 2,
+                            height: 0,
+                            classificationType: Cesium.ClassificationType.BOTH
+                        },
+                        label: pi === 0 ? {
+                            text: zone.name,
+                            font: '11px sans-serif',
+                            fillColor: cesiumColor,
+                            outlineColor: Cesium.Color.BLACK,
+                            outlineWidth: 2,
+                            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                            verticalOrigin: Cesium.VerticalOrigin.CENTER,
+                            scaleByDistance: new Cesium.NearFarScalar(1e5, 1, 5e7, 0),
+                            disableDepthTestDistance: Number.POSITIVE_INFINITY
+                        } : undefined,
+                        position: pi === 0 ? Cesium.Cartesian3.fromDegrees(ring[0][0], ring[0][1]) : undefined,
+                        properties: {
+                            type: 'noflyzone',
+                            data: { id: zone.name, name: zone.name, type: zone.type, floor: zone.floor, ceiling: zone.ceiling, center: [ring[0][0], ring[0][1]], radiusKm: '—', details: zone.details || {} }
+                        }
+                    });
+
+                    // 3D vertical extent
+                    const floorM = zone.floor * 0.3048;
+                    const ceilM = Math.min(zone.ceiling, 60000) * 0.3048;
+                    if (ceilM > floorM) {
+                        nfzEntities.entities.add({
+                            id: 'nfz-wall-' + entityId,
+                            polygon: {
+                                hierarchy: Cesium.Cartesian3.fromDegreesArray(positions),
+                                material: cesiumColor.withAlpha(0.06),
+                                outline: true,
+                                outlineColor: cesiumColor.withAlpha(0.3),
+                                height: floorM,
+                                extrudedHeight: ceilM
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        // 2. Render international zones as ellipses (no polygon data available)
+        const intlZones = filter === 'all'
+            ? STATIC_INTERNATIONAL_ZONES
+            : STATIC_INTERNATIONAL_ZONES.filter(z => z.type === filter);
+
+        for (const zone of intlZones) {
             const color = Cesium.Color.fromCssColorString(zone.color);
 
-            // Ground circle
             nfzEntities.entities.add({
-                id: 'nfz-' + zone.id,
+                id: 'nfz-intl-' + zone.id,
                 position: Cesium.Cartesian3.fromDegrees(zone.center[0], zone.center[1]),
                 ellipse: {
                     semiMajorAxis: zone.radiusKm * 1000,
@@ -1009,12 +1354,10 @@
                 }
             });
 
-            // 3D cylinder wall (shows vertical extent)
-            const floorM = zone.floor * 0.3048; // feet to meters
+            const floorM = zone.floor * 0.3048;
             const ceilM = Math.min(zone.ceiling, 60000) * 0.3048;
-
             nfzEntities.entities.add({
-                id: 'nfz-wall-' + zone.id,
+                id: 'nfz-intl-wall-' + zone.id,
                 position: Cesium.Cartesian3.fromDegrees(zone.center[0], zone.center[1]),
                 ellipse: {
                     semiMajorAxis: zone.radiusKm * 1000,
@@ -1113,21 +1456,22 @@
     setInterval(refreshApiStatus, 5000);
     refreshApiStatus();
 
-    // ===== Auto-refresh Loops =====
-    function startRefreshLoops() {
-        // Initial loads
-        refreshSatellites();
-        refreshSwaths();
-
-        // Periodic refresh
-        setInterval(refreshSatellites, REFRESH_INTERVALS.satellites);
-        setInterval(refreshSwaths, REFRESH_INTERVALS.swaths);
-        setInterval(refreshFlights, REFRESH_INTERVALS.flights);
-        setInterval(refreshShips, REFRESH_INTERVALS.ships);
-        setInterval(refreshImagery, REFRESH_INTERVALS.imagery);
+    // ===== On-Demand Startup =====
+    // Only start streams that are toggled on by default (satellites + swaths)
+    function startEnabledStreams() {
+        if (state.satellites.enabled) {
+            enableStream('satellites');
+            refreshSatellites();
+            refreshIntervals.satellites = setInterval(refreshSatellites, REFRESH_INTERVALS.satellites);
+        }
+        if (state.swaths.enabled) {
+            refreshSwaths();
+            refreshIntervals.swaths = setInterval(refreshSwaths, REFRESH_INTERVALS.swaths);
+        }
+        // flights, ships, imagery start disabled — user toggles them on
     }
 
-    startRefreshLoops();
+    startEnabledStreams();
     updateTimeDisplay();
 
     console.log('Observable Smarts initialized.');

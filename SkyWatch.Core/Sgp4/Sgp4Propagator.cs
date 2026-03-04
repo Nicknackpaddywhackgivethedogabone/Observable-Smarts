@@ -35,7 +35,10 @@ public class Sgp4Propagator
     private readonly double _n0; // mean motion in rad/min
     private readonly double _a0; // semi-major axis
     private readonly double _perigee;
+    private readonly double _apogee;
     private readonly bool _isDeepSpace;
+    private readonly string _intlDesignator;
+    private readonly DateTime _epochDateTime;
 
     public Sgp4Propagator(TleRecord tle)
     {
@@ -43,9 +46,14 @@ public class Sgp4Propagator
         _name = tle.Name;
         _category = tle.Category;
 
+        // Parse international designator from Line 1 columns 9-16
+        _intlDesignator = tle.Line1.Length >= 17 ? tle.Line1.Substring(9, 8).Trim() : "";
+
         ParseTle(tle.Line1, tle.Line2,
             out _epoch, out _inclination, out _raan, out _eccentricity,
             out _argPerigee, out _meanAnomaly, out _meanMotion, out _bstar);
+
+        _epochDateTime = new DateTime(1949, 12, 31, 0, 0, 0, DateTimeKind.Utc).AddDays(_epoch);
 
         _n0 = _meanMotion * TwoPi / MinutesPerDay;
         double a1 = Math.Pow(Xke / _n0, 2.0 / 3.0);
@@ -56,6 +64,7 @@ public class Sgp4Propagator
         double a0 = a1 * (1.0 - del1 / 3.0 - del1 * del1 - 134.0 / 81.0 * del1 * del1 * del1);
         _a0 = a0 * EarthRadiusKm;
         _perigee = (_a0 * (1.0 - _eccentricity)) - EarthRadiusKm;
+        _apogee = (_a0 * (1.0 + _eccentricity)) - EarthRadiusKm;
         _isDeepSpace = _meanMotion < 6.4; // ~225 min period
     }
 
@@ -133,8 +142,7 @@ public class Sgp4Propagator
     /// </summary>
     public SatellitePosition GetPosition(DateTime utcTime)
     {
-        var epochDateTime = new DateTime(1949, 12, 31, 0, 0, 0, DateTimeKind.Utc).AddDays(_epoch);
-        double tsince = (utcTime - epochDateTime).TotalMinutes;
+        double tsince = (utcTime - _epochDateTime).TotalMinutes;
 
         // Secular perturbations
         double cosI = Math.Cos(_inclination);
@@ -207,6 +215,11 @@ public class Sgp4Propagator
         EciToGeodetic(x * EarthRadiusKm, y * EarthRadiusKm, z * EarthRadiusKm, utcTime,
             out double lat, out double lon, out double alt);
 
+        var epochAge = utcTime - _epochDateTime;
+        var epochAgeStr = epochAge.TotalDays >= 1
+            ? $"{epochAge.TotalDays:F1} days"
+            : $"{epochAge.TotalHours:F1} hours";
+
         return new SatellitePosition
         {
             NoradId = _noradId,
@@ -216,7 +229,14 @@ public class Sgp4Propagator
             AltitudeKm = alt,
             VelocityKmS = velocity,
             Category = _category,
-            Timestamp = utcTime
+            Timestamp = utcTime,
+            IntlDesignator = _intlDesignator,
+            InclinationDeg = Math.Round(_inclination * Rad2Deg, 2),
+            PeriodMinutes = Math.Round(MinutesPerDay / _meanMotion, 2),
+            ApogeeKm = Math.Round(_apogee, 1),
+            PerigeeKm = Math.Round(_perigee, 1),
+            EccentricityValue = Math.Round(_eccentricity, 6),
+            EpochAge = epochAgeStr
         };
     }
 

@@ -7,13 +7,17 @@ public class ShipWorker : BackgroundService
     private readonly IServiceProvider _services;
     private readonly IConfiguration _configuration;
     private readonly ILogger<ShipWorker> _logger;
+    private readonly DataCaptureService _capture;
+    private readonly WorkerToggleService _workerToggle;
 
     public ShipWorker(IServiceProvider services, IConfiguration configuration,
-        ILogger<ShipWorker> logger)
+        ILogger<ShipWorker> logger, DataCaptureService capture, WorkerToggleService workerToggle)
     {
         _services = services;
         _configuration = configuration;
         _logger = logger;
+        _capture = capture;
+        _workerToggle = workerToggle;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -24,15 +28,21 @@ public class ShipWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
+            if (_workerToggle.IsEnabled("ships"))
             {
-                using var scope = _services.CreateScope();
-                var shipService = scope.ServiceProvider.GetRequiredService<ShipService>();
-                await shipService.RefreshShipDataAsync(stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in ship worker");
+                try
+                {
+                    using var scope = _services.CreateScope();
+                    var shipService = scope.ServiceProvider.GetRequiredService<ShipService>();
+                    await shipService.RefreshShipDataAsync(stoppingToken);
+
+                    if (_capture.IsEnabled)
+                        _capture.LogData("ships", shipService.GetShips());
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error in ship worker");
+                }
             }
 
             await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), stoppingToken);
