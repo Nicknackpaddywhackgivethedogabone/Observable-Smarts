@@ -858,8 +858,13 @@
                 for (const [key, configured] of Object.entries(status)) {
                     const dot = document.getElementById('status-' + key);
                     if (dot) {
-                        dot.className = 'key-status' + (configured ? ' configured' : '');
-                        dot.title = configured ? 'Configured' : 'Not set';
+                        dot.className = 'key-status ' + (configured ? 'configured' : 'not-set');
+                        dot.textContent = configured ? 'Configured' : 'Not set';
+                        dot.title = configured ? 'This key is saved' : 'No key saved yet';
+                    }
+                    const input = document.getElementById('key-' + key);
+                    if (input) {
+                        input.placeholder = configured ? '••••••• (saved — leave blank to keep)' : input.placeholder;
                     }
                 }
             }

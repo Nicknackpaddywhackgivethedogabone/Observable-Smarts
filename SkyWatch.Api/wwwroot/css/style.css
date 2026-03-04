@@ -604,14 +604,23 @@ html, body {
 
 .key-status {
     display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 8px;
     background: var(--text-muted);
+    color: var(--bg-primary);
+    vertical-align: middle;
+    margin-left: 4px;
 }
 
 .key-status.configured {
     background: var(--accent-green);
+}
+
+.key-status.not-set {
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
 }
 
 /* Scrollbar styling */
