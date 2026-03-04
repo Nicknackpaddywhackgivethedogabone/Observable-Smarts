@@ -10,6 +10,8 @@ public class ConfigController : ControllerBase
     private static readonly string[] KeyNames =
     {
         "CesiumIonToken",
+        "OpenSkyClientId",
+        "OpenSkyClientSecret",
         "OpenSkyUsername",
         "OpenSkyPassword",
         "AisHubApiKey",

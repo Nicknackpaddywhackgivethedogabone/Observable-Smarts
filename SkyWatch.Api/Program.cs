@@ -35,6 +35,11 @@ builder.Services.AddHttpClient("OpenSky", c =>
     c.Timeout = TimeSpan.FromSeconds(15);
     c.DefaultRequestHeaders.UserAgent.ParseAdd("ObservableSmarts/1.0");
 });
+builder.Services.AddHttpClient("OpenSkyAuth", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(15);
+    c.DefaultRequestHeaders.UserAgent.ParseAdd("ObservableSmarts/1.0");
+});
 builder.Services.AddHttpClient("AisHub", c =>
 {
     c.Timeout = TimeSpan.FromSeconds(15);

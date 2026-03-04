@@ -15,6 +15,8 @@ public class FlightService
     private const string FlightsCacheKey = "flights_data";
     private const string TrailsCacheKey = "flights_trails";
     private const string SourceName = "OpenSky";
+    private const string OAuthTokenCacheKey = "opensky_oauth_token";
+    private const string OAuthTokenEndpoint = "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
 
     public FlightService(IHttpClientFactory httpClientFactory, IMemoryCache cache,
         ILogger<FlightService> logger, IConfiguration configuration, ApiStatusService apiStatus)
@@ -32,13 +34,14 @@ public class FlightService
         {
             string url = "https://opensky-network.org/api/states/all";
 
-            var httpResponse = await FetchOpenSky(url, authenticated: true, ct);
+            var httpResponse = await FetchOpenSky(url, ct);
 
-            // If credentials are rejected, fall back to anonymous access
+            // If OAuth2 token was rejected, invalidate and retry once with a fresh token
             if (httpResponse != null && httpResponse.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                _logger.LogWarning("OpenSky credentials rejected (401) — falling back to anonymous access");
-                httpResponse = await FetchOpenSky(url, authenticated: false, ct);
+                _cache.Remove(OAuthTokenCacheKey);
+                _logger.LogWarning("OpenSky returned 401 — retrying with fresh token / anonymous");
+                httpResponse = await FetchOpenSky(url, ct);
             }
 
             if (httpResponse == null)
@@ -131,15 +134,29 @@ public class FlightService
         }
     }
 
-    private async Task<HttpResponseMessage?> FetchOpenSky(string url, bool authenticated, CancellationToken ct)
+    private async Task<HttpResponseMessage?> FetchOpenSky(string url, CancellationToken ct)
     {
         try
         {
             var client = _httpClientFactory.CreateClient("OpenSky");
             var request = new HttpRequestMessage(HttpMethod.Get, url);
 
-            if (authenticated)
+            // Prefer OAuth2 client credentials (new OpenSky auth)
+            var clientId = _configuration["OpenSkyClientId"];
+            var clientSecret = _configuration["OpenSkyClientSecret"];
+
+            if (!string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(clientSecret))
             {
+                var token = await GetOAuthTokenAsync(clientId, clientSecret, ct);
+                if (!string.IsNullOrEmpty(token))
+                {
+                    request.Headers.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                }
+            }
+            else
+            {
+                // Legacy fallback: Basic Auth (deprecated by OpenSky)
                 var username = _configuration["OpenSkyUsername"];
                 var password = _configuration["OpenSkyPassword"];
 
@@ -156,7 +173,49 @@ public class FlightService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "OpenSky HTTP request failed (authenticated={Auth})", authenticated);
+            _logger.LogWarning(ex, "OpenSky HTTP request failed");
+            return null;
+        }
+    }
+
+    private async Task<string?> GetOAuthTokenAsync(string clientId, string clientSecret, CancellationToken ct)
+    {
+        if (_cache.TryGetValue(OAuthTokenCacheKey, out string? cachedToken))
+            return cachedToken;
+
+        try
+        {
+            var authClient = _httpClientFactory.CreateClient("OpenSkyAuth");
+            var form = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "client_credentials",
+                ["client_id"] = clientId,
+                ["client_secret"] = clientSecret
+            });
+
+            var response = await authClient.PostAsync(OAuthTokenEndpoint, form, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning("OpenSky OAuth token request failed: HTTP {Status} — {Body}",
+                    (int)response.StatusCode, body.Length > 200 ? body[..200] : body);
+                return null;
+            }
+
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            var accessToken = json.RootElement.GetProperty("access_token").GetString();
+
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                // Cache for 25 minutes (tokens expire after 30)
+                _cache.Set(OAuthTokenCacheKey, accessToken, TimeSpan.FromMinutes(25));
+            }
+
+            return accessToken;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to obtain OpenSky OAuth token");
             return null;
         }
     }

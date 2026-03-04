@@ -897,7 +897,7 @@
 
     document.getElementById('btn-save-keys').addEventListener('click', async function () {
         const keys = {};
-        const keyNames = ['CesiumIonToken', 'OpenSkyUsername', 'OpenSkyPassword', 'AisHubApiKey', 'UsgsM2MApiToken', 'UsgsM2MUsername', 'UsgsM2MPassword'];
+        const keyNames = ['CesiumIonToken', 'OpenSkyClientId', 'OpenSkyClientSecret', 'AisHubApiKey', 'UsgsM2MApiToken', 'UsgsM2MUsername', 'UsgsM2MPassword'];
         for (const name of keyNames) {
             const val = document.getElementById('key-' + name).value.trim();
             if (val) keys[name] = val;
