@@ -77,6 +77,54 @@
         roiPoints: []
     };
 
+    // ===== Source → Sensor Mapping =====
+    const SOURCE_SENSORS = {
+        all: ['Sentinel-2 MSI', 'Sentinel-1 SAR', 'Sentinel-3', 'Sentinel-5P', 'Landsat', 'MODIS Terra'],
+        Copernicus: ['Sentinel-2 MSI', 'Sentinel-1 SAR', 'Sentinel-3', 'Sentinel-5P'],
+        USGS: ['Landsat'],
+        'NASA CMR': ['MODIS Terra']
+    };
+
+    function buildSensorOptions(source) {
+        const container = document.getElementById('imagery-sensor-options');
+        container.innerHTML = '';
+        const sensors = SOURCE_SENSORS[source] || SOURCE_SENSORS.all;
+
+        // "All" option
+        const allLabel = document.createElement('label');
+        const allRadio = document.createElement('input');
+        allRadio.type = 'radio';
+        allRadio.name = 'imagery-sensor';
+        allRadio.value = 'all';
+        allRadio.checked = true;
+        allLabel.appendChild(allRadio);
+        allLabel.appendChild(document.createTextNode(' All Sensors'));
+        container.appendChild(allLabel);
+
+        for (const sensor of sensors) {
+            const label = document.createElement('label');
+            const radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'imagery-sensor';
+            radio.value = sensor;
+            label.appendChild(radio);
+            label.appendChild(document.createTextNode(' ' + sensor));
+            container.appendChild(label);
+        }
+
+        // Reset sensor filter and wire up change listeners
+        state.imagery.sensorFilter = 'all';
+        container.querySelectorAll('input[name="imagery-sensor"]').forEach(radio => {
+            radio.addEventListener('change', function () {
+                state.imagery.sensorFilter = this.value;
+                if (state.imagery.data.length > 0) renderImagery(state.imagery.data);
+            });
+        });
+
+        // Re-render with new filter
+        if (state.imagery.data.length > 0) renderImagery(state.imagery.data);
+    }
+
     // ===== Category Colors =====
     const SAT_COLORS = {
         EarthObservation: Cesium.Color.fromCssColorString('#10b981'),
@@ -909,21 +957,16 @@
         });
     });
 
-    // Imagery source filter
+    // Imagery source filter — rebuild sensor options when source changes
     document.querySelectorAll('input[name="imagery-source"]').forEach(radio => {
         radio.addEventListener('change', function () {
             state.imagery.sourceFilter = this.value;
-            if (state.imagery.data.length > 0) renderImagery(state.imagery.data);
+            buildSensorOptions(this.value);
         });
     });
 
-    // Imagery sensor filter
-    document.querySelectorAll('input[name="imagery-sensor"]').forEach(radio => {
-        radio.addEventListener('change', function () {
-            state.imagery.sensorFilter = this.value;
-            if (state.imagery.data.length > 0) renderImagery(state.imagery.data);
-        });
-    });
+    // Build initial sensor options for "all" sources
+    buildSensorOptions('all');
 
     // ===== Per-Source Imagery Refresh =====
     function setupSourceRefresh(btnId, source) {
