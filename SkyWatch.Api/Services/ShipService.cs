@@ -133,10 +133,10 @@ public class ShipService
             >= 80 and <= 89 => VesselType.Tanker,
             >= 60 and <= 69 => VesselType.Passenger,
             30 => VesselType.Fishing,
-            >= 35 and <= 39 => VesselType.MilitaryGovernment,
+            36 or 37 => VesselType.Pleasure,
+            35 or 38 or 39 => VesselType.MilitaryGovernment,
             >= 40 and <= 49 => VesselType.HighSpeedCraft,
             >= 50 and <= 57 => VesselType.Tug,
-            >= 36 and <= 37 => VesselType.Pleasure,
             _ => VesselType.Unknown
         };
     }
